@@ -1,0 +1,364 @@
+---
+title: "One-day-ahead 1% VaR forecasting on QQQ daily log returns"
+subtitle: "Comparison of Multiple model classes"
+author: "Ethan Yao"
+format:
+  beamer:
+    aspectratio: 169
+    theme: default
+    header-includes: |
+      \setbeamertemplate{itemize items}[circle]
+      \setbeamertemplate{footline}[frame number]
+      \definecolor{BgColor}{HTML}{FDF6E3}   % Previous slide color
+      \definecolor{TextColor}{HTML}{2B2B2B} % Dark grey text (softer than pure black)
+      \setbeamercolor{background canvas}{bg=BgColor}
+      \setbeamercolor{normal text}{fg=TextColor}
+      \usebeamercolor[fg]{normal text}
+
+# Font size goes at the root level, outside the 'format' block
+fontsize: 12pt
+---
+
+## Project Objective
+Build and compare a reproducible VaR forecasting framework that combines:
+
+- Rolling out-of-sample forecasts
+- Multiple model classes (parametric, semi-parametric, nonparametric, direct quantile)
+- Statistical backtesting
+- Plot diagnostics
+
+The real goal is not just in-sample fit. The goal is model comparison under realistic tail-risk forecasting conditions.
+
+##  Data and sample
+**Dataset:**
+
+- QQQ adjusted close
+- VIX close
+
+**Construction:**
+
+- QQQ close -> daily log returns
+- VIX used as exogenous regressor for GARCHX
+- Data pipeline starts at 2015-01-01
+
+**Current local files indicate:**
+
+- Full modeled sample runs roughly from 2015-01-02 to 2026-03-19/2026-03-20 depending on the saved output file
+- Initial training fraction: 70%
+- Out-of-sample period used in saved backtests: 846 trading days
+- Pipeline forecasts start around 2022-11-01
+
+## Model Suite
+A. Original pipeline models
+
+* GARCH(1,1) - Gaussian/Student-t
+* GARCH(1,1) with FHS - Gaussian/Student-t
+* GARCH(1,1) with Bootstrap - Gaussian/Student-t
+
+B. Extension GARCH models
+
+* GARCHX(VIX)
+* GJR-GARCH - Gaussian/Student-t
+
+C. Direct Simulation Methods
+
+* CAViaR-SAV
+* Historical Simulation
+
+Use Student-t innovations for GARCH and GJR, while the lecture’s explicit benchmark example was Gaussian GARCH. For financial returns it is usually better.
+
+## Model formulas / interpretation
+
+**GARCH(1,1)**
+
+Variance recursion:
+  $$\sigma_t^2 = \omega + a \times \epsilon_{t-1}^2 + b \times \sigma_{t-1}^2$$
+
+VaR computed from one-step conditional volatility and a parametric quantile.
+
+## GARCHX(VIX)
+
+Variance recursion:
+  $$\sigma_t^2 = \omega + a \times \epsilon_{t-1}^2 + b \times \sigma_{t-1}^2 + g \times X_{t-1}$$
+where $X_t$ is a transformed VIX regressor.
+
+Current implementation now uses:
+
+- returns scaled by 100 for optimization stability
+- VIX standardized, shifted positive, then squared inside the variance recursion
+- Gaussian quasi-likelihood for the GARCHX fit itself
+- L-BFGS-B optimization with positivity bounds
+- fallback to plain GARCH when optimization fails
+
+This revision is meant to replicate the GARCHX mechanics first. Performance can be evaluated later.
+
+**GJR-GARCH**
+
+Variance recursion:
+  $$\sigma_t^2 = \omega + a \times \epsilon_{t-1}^2 + \gamma \times \epsilon_{t-1}^2 \times I(\epsilon_{t-1} < 0) + b \times \sigma_{t-1}^2$$
+
+This is the asymmetric / leverage-effect extension.
+
+In the code, asymmetry is handled by arch_model(..., $p=1$, $o=1$, $q=1$, ...).
+
+## CAViaR-SAV
+Paper idea:
+- CAViaR models the conditional quantile directly rather than modeling volatility first.
+- The Symmetric Absolute Value (SAV) specification in Engle-Manganelli uses lagged quantile plus lagged absolute return.
+- In the paper, the quantile process is estimated by regression quantiles and model adequacy is assessed with the Dynamic Quantile (DQ) test.
+
+Quantile recursion in the current code is written on the positive VaR magnitude:
+
+  $$v_t = \beta_0 + \beta_1 \times v_{t-1} + \beta_2 \times |r_{t-1}|$$
+and then mapped back to the left-tail return quantile with
+    $$q_t = -v_t$$
+with returns scaled by 100 inside optimization.
+
+##
+The remaining practical flaw is weak optimization: The current code still uses only a small set of starting values, Nelder-Mead only, and a fairly light iteration budget. Relative to the paper, this is a weak search strategy and can easily leave the fit stuck in a poor local solution.
+
+What aligns with the paper:
+
+- direct conditional quantile modeling rather than volatility-first modeling
+- SAV structure driven by lagged quantile and lagged absolute return
+- quantile loss / regression-quantile objective
+- Nelder-Mead optimization with multiple starts
+
+What does not yet fully match the paper:
+
+- no Dynamic Quantile (DQ) test in the current project runner
+- only the SAV variant is implemented; Adaptive, Asymmetric Slope, and Indirect GARCH CAViaR are not
+- the optimizer setup is simpler than the paper’s broader search routine and does not include the paper’s quasi-Newton refinement step
+- initialization is simplified relative to the paper’s empirical-quantile initialization description
+
+## 
+
+**Historical Simulation**
+
+Rolling empirical quantile of the most recent window of returns.
+Current base window: 250 days.
+
+**GARCH-FHS**
+
+Filtered Historical Simulation:
+
+- fit GARCH
+- compute standardized residuals
+- take empirical alpha-quantile of residuals
+- scale by $\hat{\sigma}_{t+1}$
+
+**GJR-FHS**
+Same empirical residual-quantile idea as FHS, but applied after fitting GJR-GARCH.
+
+This is a project extension beyond the exact lecture benchmark.
+
+**GARCH-Bootstrap**
+One-step residual bootstrap:
+- fit GARCH
+- resample standardized residuals
+- simulate one-step return
+- take empirical alpha-quantile of simulated returns
+For one-step forecasting this is very close to FHS in practice.
+
+## Backtesting framework
+At each out-of-sample date:
+1. Fit model on data up to time t-1
+2. Forecast one-step VaR for time t
+3. Compare realized return r_t to forecast VaR_t
+4. Record violation indicator:
+ $$I_t = 1(r_t < VaR_t)$$
+
+Backtests currently reported in the pipeline:
+
+- Kupiec unconditional coverage test
+- Christoffersen independence test
+- Conditional coverage test
+
+Important note:
+
+- These are standard backtests and are useful.
+- However, for CAViaR specifically, the reference paper emphasizes the Dynamic Quantile (DQ) test as the model adequacy diagnostic.
+- So the current project can say the CAViaR implementation is improved and backtested, but it cannot yet claim full paper-style adequacy checking.
+
+Interpretation:
+- Too many violations -> model underestimates risk
+- Too few violations -> model is conservative / overestimates risk
+- Failure of independence -> violations cluster, model misses dynamic risk structure
+
+## Lecture 18 alignment
+Current status relative to Stat 929 Lecture 18:
+
+Strong alignment now:
+- Historical Simulation
+- GARCH-Gaussian
+- Empirical residual quantile / FHS style GARCH
+- Residual bootstrap GARCH
+- Rolling backtesting architecture
+
+Broad alignment but more project-specific:
+- GARCH Student-t
+- GJR-GARCH
+- GJR-FHS
+- GARCHX(VIX)
+
+Still outside lecture core:
+- CAViaR-SAV
+
+Bottom line:
+The extension models brought the project much closer to the lecture’s VaR forecasting framework. The biggest lecture-consistent success is the empirical-tail GARCH variants.
+
+## Key implementation fixes already made
+A. GARCHX fixes
+- returns scaled by 100 for optimization stability
+- more sensible starting values and bounds
+- explicit raw-return fallback to standard GARCH
+- transformed VIX regressor for numerical stability
+- stationarity constraint enforced through SLSQP
+
+## CAViaR fixes
+- returns scaled by 100 for optimization stability
+- SAV recursion is now documented using positive VaR magnitude and then mapped back to a negative return quantile
+- multiple starts are still used
+- however, optimization is still weak relative to the paper: few starts, Nelder-Mead only, and limited iterations
+- a proper upgrade would add a broader search and a post-fit adequacy check such as a Dynamic Quantile style diagnostic
+
+## Extension model fixes
+- added lecture-aligned GARCH-Gaussian
+- added FHS GARCH
+- added FHS GJR
+- added residual bootstrap GARCH
+- separate extension runner and plotting script
+
+## Current saved backtest results
+Alpha = 1%
+Out-of-sample observations per model = 846
+Expected violations = 8.46
+
+A. Original pipeline results
+
+1. Historical-Simulation
+
+- Violations: 12
+- Violation rate: 1.42%
+- Kupiec p-value: 0.250
+- Christoffersen p-value: 0.157
+- Conditional coverage p-value: 0.190
+Verdict: strong benchmark; stable and defensible
+
+2. GARCH-Gaussian
+
+- Violations: 22
+- Violation rate: 2.60%
+- Kupiec p-value: 0.0001
+- Christoffersen p-value: 0.598
+- Conditional coverage p-value: 0.0004
+Verdict: clearly too thin-tailed for QQQ left-tail risk
+
+3. GARCH(1,1) Student-t
+
+- Violations: 13
+- Violation rate: 1.54%
+- Kupiec p-value: 0.146
+- Christoffersen p-value: 0.189
+- Conditional coverage p-value: 0.147
+Verdict: acceptable, but no longer best once extension models are included
+
+4. GARCH-FHS
+
+- Violations: 7
+- Violation rate: 0.83%
+- Kupiec p-value: 0.603
+- Christoffersen p-value: 0.732
+- Conditional coverage p-value: 0.824
+Verdict: excellent; slightly conservative but very strong
+
+5. GARCH-Bootstrap
+
+- Violations: 5
+- Violation rate: 0.59%
+- Kupiec p-value: 0.196
+- Christoffersen p-value: 0.807
+- Conditional coverage p-value: 0.420
+Verdict: good, but conservative
+
+6. GJR-GARCH Student-t
+
+- Violations: 15
+- Violation rate: 1.77%
+- Kupiec p-value: 0.042
+- Christoffersen p-value: 0.462
+- Conditional coverage p-value: 0.096
+Verdict: mixed; asymmetry helps somewhat, but not enough
+
+7. GJR-FHS
+
+- Violations: 8
+- Violation rate: 0.95%
+- Kupiec p-value: 0.873
+- Christoffersen p-value: 0.696
+- Conditional coverage p-value: 0.915
+Verdict: best overall in current saved outputs
+
+8. GARCHX(VIX)
+
+- Violations: 16
+- Violation rate: 1.89%
+- Kupiec p-value: 0.020
+- Christoffersen p-value: 0.304
+- Conditional coverage p-value: 0.040
+Verdict: underwhelming; does not outperform plain GARCH; should be treated as experimental
+
+9. CAViaR-SAV
+
+- Violations: 6
+- Violation rate: 0.71%
+- Kupiec p-value: 0.370
+- Christoffersen p-value: 0.030
+- Conditional coverage p-value: 0.063
+Verdict: no longer broken; unconditional coverage is acceptable and the model is slightly conservative, but hit clustering is still a problem and the result is only borderline on overall conditional coverage
+
+## Plot-based interpretation
+Saved plots are consistent with the backtests:
+- Historical Simulation gives a stepwise, slow-moving VaR line but remains competitive
+- GARCH Student-t reacts to stress periods reasonably well
+- GJR-GARCH reacts to stress, but not as effectively as GJR-FHS
+- GARCHX looks visually similar to plain GARCH but backtests worse
+- GARCH-Gaussian sits too close to zero during stressed periods and gets breached too often
+- GARCH-FHS and GJR-FHS become more negative during volatility spikes and produce much better calibration
+- GARCH-Bootstrap is visually close to GARCH-FHS, which is expected for one-step forecasting
+- CAViaR-SAV in the saved results still sits far too close to zero and gets breached constantly
+
+## References
+*n.d. for no date*
+
+Hochreiter, S., & Schmidhuber, J. (1997). Long short-term memory. Neural Computation, 9(8), 1735–1780. doi:10.1162/neco.1997.9.8.1735
+
+Canadian Wildland Fire Information System. (n.d.). National Fire Database point form (NFDB_point) [Data file]. Retrieved March 8, 2026, from https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_pnt/current_version/NFDB_point.zip
+
+Canadian Wildland Fire Information System. (n.d.). National Fire Database polygon form (NFDB_poly) [Data file]. Retrieved March 8, 2026, from https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip
+
+Esri. (n.d.). Spatial references. ArcGIS Developers. Retrieved from https://developers.arcgis.com/documentation/spatial-references/
+
+##
+National Oceanic and Atmospheric Administration. (2021). HMS smoke polygons annual bundle, 2021 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2021.zip
+
+National Oceanic and Atmospheric Administration. (2022). HMS smoke polygons annual bundle, 2022 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2022.zip
+
+National Oceanic and Atmospheric Administration. (2023). HMS smoke polygons annual bundle, 2023 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2023.zip
+
+National Oceanic and Atmospheric Administration. (2024). HMS smoke polygons annual bundle, 2024 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2024.zip
+
+##
+National Oceanic and Atmospheric Administration. (2025). HMS smoke polygons annual bundle, 2025 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2025.zip
+
+Ontario Ministry of the Environment, Conservation and Parks. (n.d.). Historical air quality pollutant data. Air Quality Ontario. Retrieved February 13, 2026, from https://www.airqualityontario.com/history/index.php
+
+Open-Meteo. (n.d.). ERA5 archive API [Data set]. Retrieved March 8, 2026, from https://archive-api.open-meteo.com/v1/archive
+
+OpenStreetMap Wiki. (2024). EPSG:3857. Retrieved from https://wiki.openstreetmap.org/wiki/EPSG:3857
+
+##
+
+Statistics Canada. (2025, December 15). New motor vehicle registrations, quarterly, by geographic level (Table 20-10-0025-01) [Data set]. doi:10.25318/2010002501-eng
+
+Statistics Canada. (2026, January 15). Traffic flow dashboard (Catalogue No. 71-607-X) [Interactive data product]. Retrieved February 13, 2026, from https://www150.statcan.gc.ca/n1/pub/71-607-x/71-607-x2022018-eng.htm
