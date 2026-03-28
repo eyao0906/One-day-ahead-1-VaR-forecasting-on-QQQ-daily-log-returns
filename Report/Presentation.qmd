@@ -400,20 +400,21 @@ Backtests currently reported in the pipeline:
 
 \tiny
 
-| Rank | Model | Viol. | Rate | Kupiec p | Christoff. p | CC p | Interpretation |
-|---|---|---:|---:|---:|---:|---:|---|
-| 1 | GJR-FHS | 8 | 0.94% | 0.867 | 0.696 | 0.914 | Best overall calibration |
-| 2 | GARCH-FHS | 7 | 0.83% | 0.598 | 0.733 | 0.821 | Excellent, slightly conservative |
-| 3 | GARCH-t-FHS | 6 | 0.71% | 0.366 | 0.770 | 0.637 | Strong, conservative |
-| 4 | GJR-t-FHS | 6 | 0.71% | 0.366 | 0.770 | 0.637 | Strong, conservative |
-| 5 | GARCH-t-Bootstrap | 6 | 0.71% | 0.366 | 0.770 | 0.637 | Strong, deterministic bootstrap |
-| 6 | Historical-Simulation | 12 | 1.42% | 0.253 | 0.157 | 0.191 | Strong benchmark |
-| 7 | GARCH-Student-t | 13 | 1.53% | 0.148 | 0.189 | 0.148 | Acceptable baseline |
-| 8 | CAViaR-SAV | 6 | 0.71% | 0.366 | 0.030 | 0.063 | Coverage ok, clustering issue |
-| 9 | GJR-GARCH | 15 | 1.77% | 0.042 | 0.462 | 0.097 | Mixed, asymmetry not enough |
-| 10 | GARCHX(VIX) | 15 | 1.77% | 0.042 | 0.262 | 0.068 | Benchmark only |
-| 11 | RiskMetrics (0.94) | 18 | 2.12% | 0.004 | 0.392 | 0.012 | Underestimates risk |
-| 12 | GARCH-Gaussian | 22 | 2.59% | 0.0001 | 0.597 | 0.0005 | Too thin-tailed |
+| Rank | Model                     | Viol. |  Rate | Kupiec p | Christoff. p |   CC p | Interpretation                            |
+| ---- | ------------------------- | ----: | ----: | -------: | -----------: | -----: | ----------------------------------------- |
+| 1    | GJR-FHS                   |     8 | 0.94% |    0.867 |        0.696 |  0.914 | Best overall calibration                  |
+| 2    | GARCH-FHS                 |     7 | 0.83% |    0.598 |        0.733 |  0.821 | Excellent, slightly conservative          |
+| 3    | GARCH-t-FHS               |     6 | 0.71% |    0.366 |        0.770 |  0.637 | Strong, conservative                      |
+| 4    | GJR-t-FHS                 |     6 | 0.71% |    0.366 |        0.770 |  0.637 | Strong, conservative                      |
+| 5    | GARCH-t-Bootstrap         |     6 | 0.71% |    0.366 |        0.770 |  0.637 | Strong, essentially tied with t-FHS       |
+| 6    | GARCH-Bootstrap           |     5 | 0.59% |    0.193 |        0.807 |  0.417 | Good independence, but too conservative   |
+| 7    | Historical-Simulation     |    12 | 1.42% |    0.253 |        0.157 |  0.191 | Strong benchmark                          |
+| 8    | GARCH-t                |    13 | 1.53% |    0.148 |        0.189 |  0.148 | Acceptable parametric baseline            |
+| 9    | CAViaR-SAV                |     6 | 0.71% |    0.366 |        0.030 |  0.063 | Coverage ok, but exceptions cluster       |
+| 10   | GJR-GARCH                 |    15 | 1.77% |    0.042 |        0.462 |  0.097 | Mixed, too many violations                |
+| 11   | GARCHX(VIX)  |    15 | 1.77% |    0.042 |        0.262 |  0.068 | Benchmark only, still underestimates risk |
+| 12   | RiskMetrics (0.94) |    18 | 2.12% |    0.004 |        0.392 |  0.012 | Underestimates risk                       |
+| 13   | GARCH-Gaussian            |    22 | 2.59% |   0.0001 |        0.597 | 0.0005 | Too thin-tailed                           |
 
 \normalsize
 
@@ -425,6 +426,10 @@ Ranking logic:
 - Too many violations -> model underestimates risk
 - Too few violations -> model is conservative / overestimates risk
 - Failure of independence -> violations cluster, model misses dynamic risk structure
+
+GARCH-t-FHS, GJR-t-FHS, and GARCH-t-Bootstrap are exact ties in the integrated file.
+
+CAViaR-SAV is above GJR-GARCH and GARCHX because its hit rate is much closer to the 1% target, even though its independence result is weak. That matches the current project interpretation that empirical-tail FHS models are strongest, while CAViaR still has clustering issues and the package GARCHX is more of a comparison benchmark.
 
 ## Overall performance evaluation
 
