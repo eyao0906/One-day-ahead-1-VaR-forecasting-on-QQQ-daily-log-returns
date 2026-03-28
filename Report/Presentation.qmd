@@ -1,6 +1,6 @@
 ---
 title: "One-day-ahead 1% VaR forecasting on QQQ daily log returns"
-subtitle: "Comparison of Multiple model classes"
+subtitle: "Comparison of multiple models forecasting the left-tail conditional quantile of next-day log return"
 author: "Ethan Yao"
 format:
   beamer:
@@ -66,20 +66,13 @@ $$
 $$
 \sqrt{\frac{\nu - 2}{\nu}}
 $$
-So the final one-step forecast is
-$$
-\operatorname{VaR}_{t+1}(\alpha) = \mu_{t+1} + \sigma_{t+1} q_\alpha
-$$
 
 ##
 When the model is conditionally location-scale, the generic structure is
-
 $$
 r_{t+1} = \mu_{t+1} + \sigma_{t+1} z_{t+1},
 $$
-
-which implies
-
+which implies the final one-step forecast is
 $$
 \operatorname{VaR}_{t+1}(\alpha) = \mu_{t+1} + \sigma_{t+1} q_\alpha,
 $$
@@ -96,12 +89,12 @@ where $q_\alpha$ is either a parametric quantile (Gaussian or Student-$t$) or an
 
 * GARCH(1,1) - Gaussian/Student-t
 * Nonparametric Quantile-GARCH SD - Gaussian/Student-t
-* Nonparametric-GARCH Bootstra - Gaussian/Student-t
+* Nonparametric-GARCH Bootstrap - Gaussian/Student-t
 
 **2. Extension GARCH models**
 
 * GARCHX(VIX)
-* GJR-GARCH - Gaussian/Student-t
+* GJR-GARCH - Gaussian/Student-t - Raw/FHS
 
 ##
 **3. Direct Simulation Methods**
@@ -115,46 +108,40 @@ Gaussian model says extreme moves are very rare, but in real financial data, lar
 ## Model formulas / interpretation
 **RiskMetrics Model**
   $$r_t = \sigma_t W_t, W_t \sim N(0, 1)$$
-  $$\sigma_t^2 = \lambda \sigma_{t-1}^2 + (1 - \lambda) \r_{t-1}^2$$
-$$
-VaR_{t,1}(\alpha)
-=
-\left(1 - e^{\sigma_{t+1}\Phi^{-1}(\alpha)}\right)p_t
-$$
+  $$\sigma_t^2 = \lambda \sigma_{t-1}^2 + (1 - \lambda)r_{t-1}^2$$
+  $$
+  \operatorname{VaR}_{t+1}(\alpha) = \mu_{t+1} + \sigma_{t+1} q_\alpha,
+  $$
 
 **GARCH(1,1)**
 
 Variance recursion:
-  $$x_t = \sigma_t W_t, W_t \sim N(0, 1)/Student-t$$
-  $$\sigma_t^2 = \omega + a \, x_{t-1}^2 + b \,\sigma_{t-1}^2,$$
-
-VaR computed from one-step conditional volatility and a parametric quantile.
+  $$rt_​= \mu + \varepsilon_t$$​
+  $$\varepsilon_t = \sigma_t W_t, W_t \sim N(0, 1)/Student-t$$
+  $$\sigma_t^2 = \omega + a \, r_{t-1}^2 + b \,\sigma_{t-1}^2,$$
+  $$
+  \operatorname{VaR}_{t+1}(\alpha) = \mu_{t+1} + \sigma_{t+1} q_\alpha,
+  $$
 
 ## 
 **GARCHX(VIX)**
 
-GARCHX extends the standard GARCH volatility model by adding VIX as the exogenous market-risk variable to the conditional variance equation. The idea is to test whether implied market volatility helps explain the next-day tail risk of QQQ returns.
+GARCHX extends the standard GARCH volatility model by adding VIX as an exogenous market-risk variable in the conditional variance equation. The goal is to test whether implied market volatility helps explain the next-day tail risk of QQQ returns. 
 
-\* R `garchx` package*
+\* R `garchx` package
 $$
-y_t = r_t - \mu
+\varepsilon_t = r_t - \mu
 $$
 $$
-y_t = \sigma_t \eta_t
+\varepsilon_t = \sigma_t W_t, W_t \sim N(0, 1) 
 $$
-
-$$
-\sigma_t^2 = \omega + \alpha y_{t-1}^2 + \beta \sigma_{t-1}^2 + \delta x_t
-$$
-
-where: $r_t$ is the QQQ daily log return, $\mu$ is the rolling sample mean, $x_t$ is the standardized VIX regressor, $\sigma_t^2$ is the conditional variance
 
 ##
 For one-step-ahead forecasting, the model uses the latest observed in-sample VIX value to form the next volatility forecast:
-
 $$
-\sigma_{t+1|t}^2 = \omega + \alpha y_t^2 + \beta \sigma_t^2 + \delta x_t
+\sigma_{t+1|t}^2 = \omega + \alpha \varepsilon_t^2 + \beta \sigma_t^2 + \delta x_t
 $$
+where $r_t$ is the QQQ daily log return, $\mu$ is the rolling sample mean, $x_t$ is the standardized VIX regressor, $\sigma_t^2$ is the conditional variance.
 
 The VaR forecast is then obtained by combining the rolling mean, the forecasted volatility, and a Gaussian tail quantile:
 
@@ -162,11 +149,13 @@ $$
 \widehat{\operatorname{VaR}}_{t+1}(\alpha) = \mu + \sigma_{t+1|t} \Phi^{-1}(\alpha)
 $$
 
-Because returns are scaled by 100 in the estimation step, the final VaR is scaled back before being stored.
-
 ##
 **GJR-GARCH**
+
 The GJR-GARCH(1,1,1) variance recursion is
+$$
+\varepsilon_t ​= r_t​− \mu
+$$
 $$
 \sigma_t^2 = \omega + a\,\varepsilon_{t-1}^2 + \gamma\,\varepsilon_{t-1}^2 I(\varepsilon_{t-1}<0) + b\,\sigma_{t-1}^2.
 $$
@@ -185,6 +174,7 @@ In the code, asymmetry is handled by arch_model(..., $p=1$, $o=1$, $q=1$, ...).
 
 ## Direct Quantile Forecasts 
 **CAViaR-SAV**
+
 CAViaR models the quantile directly, instead of modeling volatility first.
 
 The implementation here uses the **Symmetric Absolute Value (SAV)** form adopting the core idea from *CAViaR: Conditional Autoregressive Value at Risk by Regression Quantiles (Engle & Manganelli, 2002)*, moving attention from the full return distribution to the evolution of the tail quantile itself. 
@@ -196,9 +186,6 @@ In my implementation:
 $$
 v_t = \beta_0 + \beta_1 v_{t-1} + \beta_2 |r_{t-1}|
 $$
-$$
-v_t = \eta_0 + \eta_1 v_{t-1} + \eta_2 |r_{t-1}|,
-$$
 and then maps it back to the left-tail return quantile by
 $$
 q_t = -v_t.
@@ -209,7 +196,7 @@ $$
 \widehat{\operatorname{VaR}}_{t+1}(\alpha) = q_{t+1}
 $$
 
-This matches the paper’s SAV spirit: the tail risk today depends on the previous tail level and on the size of the latest market move. Large absolute returns push the next quantile farther into the left tail.
+The paper’s SAV: the tail risk today depends on the previous tail level and on the size of the latest market move. Large absolute returns push the next quantile farther into the left tail.
 
 ## Estimation criterion
 
@@ -224,7 +211,7 @@ $$
 $$
 So CAViaR does not assume a Gaussian or Student-\(t\) conditional distribution. It estimates only the conditional quantile needed for VaR. 
 
-## What the current implementation does
+## What the current simplifeid implementation does
 
 In the code:
 
@@ -235,8 +222,6 @@ In the code:
 - only **4 starting values** are tried
 - the iteration budget is light: `maxiter = 400`
 - the final forecast is the next recursively computed quantile, then scaled back by dividing by 100
-
-This is exactly why the implementation is now better described as **conceptually aligned with the paper, but computationally simplified**.
 
 ## What aligns with the paper
 
@@ -255,7 +240,7 @@ This is exactly why the implementation is now better described as **conceptually
 
 ## Interpretation
 
-CAViaR is attractive because it targets the quantity we actually care about for risk management: the conditional lower-tail quantile. It can adapt quickly to changing risk conditions without forcing the full return distribution to be correctly specified. But in this project, the current CAViaR result should still be treated as **exploratory rather than final-best**, because the backtest issue is now mainly **exception clustering and weak optimization**, not a broken recursion formula.
+In this project, the current CAViaR result is **exploratory**, because the backtest issue is now mainly **exception clustering and weak optimization**, not a broken recursion formula.
 
 ## 
 **Historical Simulation**
@@ -286,7 +271,7 @@ $$
 \widehat{\operatorname{VaR}}_{t+1}(\alpha) = \hat{\mu}_{t+1} + \hat{\sigma}_{t+1}\hat{q}_{\alpha,\mathrm{emp}}
 $$
 
-This matches Lecture 18’s **Nonparametric Quantile-GARCH SD**: forecast next-step volatility from GARCH, then combine it with the empirical residual tail. That is why FHS gives a more realistic left-tail fit than Gaussian GARCH in this project.
+Lecture 18’s **Nonparametric Quantile-GARCH SD**: forecast next-step volatility from GARCH, then combine it with the empirical residual tail. That is why FHS gives a more realistic left-tail fit than Gaussian GARCH in this project.
 
 ##
 **GARCH-FHS**
@@ -297,6 +282,7 @@ Filtered Historical Simulation:
 - compute standardized residuals
 - take empirical alpha-quantile of residuals
 - scale by $\hat{\sigma}_{t+1}$
+
 
 **GJR-FHS**
 
@@ -351,8 +337,52 @@ Backtests currently reported in the pipeline:
 - Christoffersen independence test
 - Conditional coverage test
 
+## Plot Results
+![](../outputs/riskmetrics/plot_var_riskmetrics.png){fig-align="center" width="100%"}
+
+##
+![](../outputs/plots_ext/var_GARCH-Gaussian.png){fig-align="center" width="100%"}
+
+## GARCH(1,1) - Student-t
+![](../outputs/plots/var_GARCH1,1.png){fig-align="center" width="100%"}
+
+## 
+![](../outputs/riskmetrics/plot_var_riskmetrics.png){fig-align="center" width="100%"}
+
+##
+![](../outputs/garchx_only/plot_garchx_vix.png){fig-align="center" width="100%"}
+
+##
+![](../outputs/plots/var_GJR-GARCH.png){fig-align="center" width="100%"}
+
+## GJR-GARCH - Student-t
+![](../outputs/plots/var_GJR-GARCH.png){fig-align="center" width="100%"}
+
+##
+![](../outputs/plots/var_Historical-Simulation.png){fig-align="center" width="100%"}
+
+##
+![](../outputs/plots/var_CAViaR-SAV.png){fig-align="center" width="100%"}
+
+## GARCH(1,1) - Gaussian - FHS
+![](../outputs/plots_ext/var_GARCH-FHS.png){fig-align="center" width="100%"}
+
+## GARCH(1,1) - Student-t - FHS
+![](../outputs/plots/var_GARCH-t-FHS.png){fig-align="center" width="100%"}
+
+## GJR-GARCH - Gaussian - FHS
+![](../outputs/plots_ext/var_GJR-FHS.png){fig-align="center" width="100%"}
+
+## GJR-GARCH - Student-t - FHS
+![](../outputs/plots/var_GJR-t-FHS.png){fig-align="center" width="100%"}
+
+## GARCH(1,1) - Gaussian - Bootstrap
+![](../outputs/plots_ext/var_GARCH-Bootstrap.png){fig-align="center" width="100%"}
+
+## GARCH(1,1) - Student-t - FHS
+![](../outputs/plots/var_GARCH-t-Bootstrap.png){fig-align="center" width="100%"}
+
 ## Plot-based interpretation
-Saved plots are consistent with the backtests:
 
 - Historical Simulation gives a stepwise, slow-moving VaR line but remains competitive
 - GARCH Student-t reacts to stress periods reasonably well
@@ -376,7 +406,7 @@ Saved plots are consistent with the backtests:
 | 4 | GJR-t-FHS | 6 | 0.71% | 0.366 | 0.770 | 0.637 | Strong, conservative |
 | 5 | GARCH-t-Bootstrap | 6 | 0.71% | 0.366 | 0.770 | 0.637 | Strong, deterministic bootstrap |
 | 6 | Historical-Simulation | 12 | 1.42% | 0.253 | 0.157 | 0.191 | Strong benchmark |
-| 7 | GARCH(1,1) | 13 | 1.53% | 0.148 | 0.189 | 0.148 | Acceptable baseline |
+| 7 | GARCH-Student-t | 13 | 1.53% | 0.148 | 0.189 | 0.148 | Acceptable baseline |
 | 8 | CAViaR-SAV | 6 | 0.71% | 0.366 | 0.030 | 0.063 | Coverage ok, clustering issue |
 | 9 | GJR-GARCH | 15 | 1.77% | 0.042 | 0.462 | 0.097 | Mixed, asymmetry not enough |
 | 10 | GARCHX(VIX) | 15 | 1.77% | 0.042 | 0.262 | 0.068 | Benchmark only |
@@ -410,25 +440,24 @@ Ranking logic:
 - **GARCHX(VIX)** is useful as an exogenous-volatility benchmark, but it does not improve forecasting accuracy in the saved outputs
 - **CAViaR-SAV** is no longer a coverage failure, but exception clustering means it is still not as trustworthy as the best FHS models
 
-## Main interpretation
+## Conclusion
 
-- the biggest improvement comes from **empirical-tail calibration**, not just from changing the volatility recursion
-- asymmetry helps, but **good tail modeling helps more**
-- for QQQ 1% VaR, volatility models with **empirical residual tails** outperform purely parametric Gaussian approaches
+- The biggest improvement comes from **empirical-tail calibration**, not just from changing the volatility recursion
+
+- Asymmetry helps, but **good tail modeling helps more**
+
+- For QQQ 1% VaR, volatility models with **empirical residual tails** outperform purely parametric Gaussian approaches
 
 ## Project limitations
 
-- **Model overlap across runners:** the project now has overlapping model families across the base and extension runners, so the workflow story is less clean
-- **Bootstrap implementation:** bootstrap models reset `np.random.seed(42)` inside the forecast function, making rolling bootstrap forecasts deterministic
-- **GARCHX benchmark:** the new R `garchx` package version is more defensible than the old custom Python version, but it still uses a **Gaussian VaR overlay**, so it is a benchmark rather than a final top model
-- **Legacy/custom GARCHX:** earlier Python GARCHX should only be described as experimental / custom-coded
-- **CAViaR-SAV:** still lacks a proper **Dynamic Quantile-style adequacy test** and still uses a relatively weak optimization routine compared with the original paper
-- **No RiskMetrics-centered final benchmark story:** RiskMetrics is present, but not competitive enough to anchor the final conclusions
+- **CAViaR is only a partial replication:** 
+It uses simplified optimization and omits the paper’s full Dynamic Quantile adequacy testing, so its results are not fully validated.
 
-**Bottom line:**
+- **GARCHX is not fully justified yet:** 
+VIX is included as an exogenous regressor, but the project does not formally verify that it adds forecasting value beyond plain GARCH.
 
-The project is already strong on rolling forecasting, model breadth, and backtesting. The main remaining weaknesses are methodological polish rather than the core empirical conclusion.
-
+- **Some implementation choices may bias interpretation:** 
+Deterministic bootstrap seeding and split model runners can make comparisons look cleaner or more stable than they truly are.
 
 ## References
 Engle, R. F., & Manganelli, S. (2002, July). CAViaR: Conditional autoregressive value at risk by regression quantiles [Unpublished manuscript].
