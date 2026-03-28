@@ -133,19 +133,36 @@ VaR computed from one-step conditional volatility and a parametric quantile.
 ## 
 **GARCHX(VIX)**
 
-Variance recursion:
-  $$\sigma_t^2 = \omega + a \times \epsilon_{t-1}^2 + b \times \sigma_{t-1}^2 + g \times X_{t-1}$$
-where $X_t$ is a transformed VIX regressor.
+GARCHX extends the standard GARCH volatility model by adding VIX as the exogenous market-risk variable to the conditional variance equation. The idea is to test whether implied market volatility helps explain the next-day tail risk of QQQ returns.
 
-Current implementation now uses:
+\* R `garchx` package*
+$$
+y_t = r_t - \mu
+$$
+$$
+y_t = \sigma_t \eta_t
+$$
 
-- returns scaled by 100 for optimization stability
-- VIX standardized, shifted positive, then squared inside the variance recursion
-- Gaussian quasi-likelihood for the GARCHX fit itself
-- L-BFGS-B optimization with positivity bounds
-- fallback to plain GARCH when optimization fails
+$$
+\sigma_t^2 = \omega + \alpha y_{t-1}^2 + \beta \sigma_{t-1}^2 + \delta x_t
+$$
 
-This revision is meant to replicate the GARCHX mechanics first. Performance can be evaluated later.
+where: $r_t$ is the QQQ daily log return, $\mu$ is the rolling sample mean, $x_t$ is the standardized VIX regressor, $\sigma_t^2$ is the conditional variance
+
+##
+For one-step-ahead forecasting, the model uses the latest observed in-sample VIX value to form the next volatility forecast:
+
+$$
+\sigma_{t+1|t}^2 = \omega + \alpha y_t^2 + \beta \sigma_t^2 + \delta x_t
+$$
+
+The VaR forecast is then obtained by combining the rolling mean, the forecasted volatility, and a Gaussian tail quantile:
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha) = \mu + \sigma_{t+1|t} \Phi^{-1}(\alpha)
+$$
+
+Because returns are scaled by 100 in the estimation step, the final VaR is scaled back before being stored.
 
 ##
 **GJR-GARCH**
@@ -170,7 +187,15 @@ In the code, asymmetry is handled by arch_model(..., $p=1$, $o=1$, $q=1$, ...).
 **CAViaR-SAV**
 CAViaR models the quantile directly, instead of modeling volatility first.
 
-The implementation here uses the **Symmetric Absolute Value (SAV)** form adopting truncated idea from *CAViaR: Conditional Autoregressive Value at Risk by Regression Quantiles (Engle & Manganelli, 2002)*. It defines a positive VaR magnitude $v_t$ by
+The implementation here uses the **Symmetric Absolute Value (SAV)** form adopting the core idea from *CAViaR: Conditional Autoregressive Value at Risk by Regression Quantiles (Engle & Manganelli, 2002)*, moving attention from the full return distribution to the evolution of the tail quantile itself. 
+
+**Symmetric Absolute Value (SAV)** specification updates the quantile using its own lag and the magnitude of the lagged return. 
+
+##
+In my implementation:
+$$
+v_t = \beta_0 + \beta_1 v_{t-1} + \beta_2 |r_{t-1}|
+$$
 $$
 v_t = \eta_0 + \eta_1 v_{t-1} + \eta_2 |r_{t-1}|,
 $$
@@ -178,58 +203,59 @@ and then maps it back to the left-tail return quantile by
 $$
 q_t = -v_t.
 $$
+
 So the one-step VaR forecast is simply the next autoregressive quantile level.
-
-Estimation criterion
-
-Parameters are estimated by quantile regression loss (the check loss):
-
 $$
-L(\eta) = \sum_t
-ho_\alpha (r_t - q_t(\eta)),
+\widehat{\operatorname{VaR}}_{t+1}(\alpha) = q_{t+1}
 $$
 
+This matches the paper’s SAV spirit: the tail risk today depends on the previous tail level and on the size of the latest market move. Large absolute returns push the next quantile farther into the left tail.
+
+## Estimation criterion
+
+The parameters are estimated by regression quantiles, using the standard quantile “check” loss:
+
+$$
+L(\beta) = \sum_t \rho_\alpha\!\left(r_t - q_t(\beta)\right)
+$$
 where
-
 $$
-
-ho_\alpha(u) = \big(\alpha - I(u<0)\big).
+\rho_\alpha(u) = u \left(\alpha - I(u < 0)\right)
 $$
+So CAViaR does not assume a Gaussian or Student-\(t\) conditional distribution. It estimates only the conditional quantile needed for VaR. 
 
-This is exactly the standard quantile-regression objective.
+## What the current implementation does
 
-**Implementation notes**
+In the code:
 
-- Returns are scaled by 100.
-- The optimizer is Nelder-Mead.
-- Several initial starting values are tried, and the best objective value is kept.
-- The code uses `numba` if available for faster loss evaluation.
+- returns are scaled by 100 before optimization
+- the recursion is initialized from an empirical tail estimate
+- only the **SAV** form is implemented
+- optimization uses **Nelder–Mead only**
+- only **4 starting values** are tried
+- the iteration budget is light: `maxiter = 400`
+- the final forecast is the next recursively computed quantile, then scaled back by dividing by 100
 
-**Interpretation**
+This is exactly why the implementation is now better described as **conceptually aligned with the paper, but computationally simplified**.
 
-CAViaR is appealing because it avoids specifying a full conditional distribution. Instead, it focuses only on the conditional quantile needed for VaR.
+## What aligns with the paper
 
-Paper idea:
-- CAViaR models the conditional quantile directly rather than modeling volatility first.
-- The Symmetric Absolute Value (SAV) specification in Engle-Manganelli uses lagged quantile plus lagged absolute return.
-- In the paper, the quantile process is estimated by regression quantiles and model adequacy is assessed with the Dynamic Quantile (DQ) test.
-
-##
-The remaining practical flaw is weak optimization: The current code still uses only a small set of starting values, Nelder-Mead only, and a fairly light iteration budget. Relative to the paper, this is a weak search strategy and can easily leave the fit stuck in a poor local solution.
-
-What aligns with the paper:
-
-- direct conditional quantile modeling rather than volatility-first modeling
+- direct modeling of the conditional quantile rather than volatility-first modeling
 - SAV structure driven by lagged quantile and lagged absolute return
-- quantile loss / regression-quantile objective
-- Nelder-Mead optimization with multiple starts
+- estimation by regression-quantile loss
+- autoregressive tail-risk dynamics
 
-What does not yet fully match the paper:
+## What does not yet fully match the paper
 
-- no Dynamic Quantile (DQ) test in the current project runner
-- only the SAV variant is implemented; Adaptive, Asymmetric Slope, and Indirect GARCH CAViaR are not
-- the optimizer setup is simpler than the paper’s broader search routine and does not include the paper’s quasi-Newton refinement step
-- initialization is simplified relative to the paper’s empirical-quantile initialization description
+- no **Dynamic Quantile (DQ) test** in the current project runner
+- only the **SAV** variant is implemented; the paper also studies Adaptive, Asymmetric Slope, and Indirect GARCH CAViaR
+- the optimizer is much weaker than the paper’s search routine
+- the paper uses a broader multi-start strategy and combines **Nelder–Mead with quasi-Newton refinement**
+- initialization is simplified relative to the paper’s empirical-quantile setup and broader estimation workflow.
+
+## Interpretation
+
+CAViaR is attractive because it targets the quantity we actually care about for risk management: the conditional lower-tail quantile. It can adapt quickly to changing risk conditions without forcing the full return distribution to be correctly specified. But in this project, the current CAViaR result should still be treated as **exploratory rather than final-best**, because the backtest issue is now mainly **exception clustering and weak optimization**, not a broken recursion formula.
 
 ## 
 **Historical Simulation**
@@ -252,6 +278,17 @@ If fewer than 250 observations are available, the function uses the full availab
 It is still an important benchmark because many more complicated models do not always beat it.
 
 ## Nonparametric Quantile-GARCH SD/Boostrap 
+**Filtered Historical Simulation (FHS)**
+
+FHS fits a GARCH volatility model first, but instead of using a Gaussian or Student-\(t\) quantile at the end, it uses the **empirical quantile of standardized residuals**. So the forecast is
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha) = \hat{\mu}_{t+1} + \hat{\sigma}_{t+1}\hat{q}_{\alpha,\mathrm{emp}}
+$$
+
+This matches Lecture 18’s **Nonparametric Quantile-GARCH SD**: forecast next-step volatility from GARCH, then combine it with the empirical residual tail. That is why FHS gives a more realistic left-tail fit than Gaussian GARCH in this project.
+
+##
 **GARCH-FHS**
 
 Filtered Historical Simulation:
@@ -262,11 +299,37 @@ Filtered Historical Simulation:
 - scale by $\hat{\sigma}_{t+1}$
 
 **GJR-FHS**
+
 Same empirical residual-quantile idea as FHS, but applied after fitting GJR-GARCH.
 
+## Residual Bootstrap GARCH
+
+The bootstrap method is another semi-parametric VaR approach. 
+
+For the **one-step-ahead** VaR problem in this project, bootstrap and FHS are mechanically very close.
+
+FHS computes
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)
+=
+\hat{\mu}_{t+1} + \hat{\sigma}_{t+1}\hat{q}_{\alpha,\mathrm{emp}}
+$$
+where $\hat{q}_{\alpha,\mathrm{emp}}$ is the empirical quantile of the standardized residuals.
+
+##
+Bootstrap instead resamples those same standardized residuals, forms
+$$
+r_{t+1}^{*(i)} = \hat{\mu}_{t+1} + \hat{\sigma}_{t+1} z_{t+1}^{*(i)},
+$$
+and then takes the empirical quantile across the simulated returns.
+
+So for one-step forecasting, bootstrap is essentially just a simulation-based way to recover the same empirical residual tail used by FHS. That is why, in this project, bootstrap and FHS give very similar results.
+
+##
 **GARCH-Bootstrap**
 
 One-step residual bootstrap:
+
 - fit GARCH
 - resample standardized residuals
 - simulate one-step return
@@ -275,6 +338,7 @@ For one-step forecasting this is very close to FHS in practice.
 
 ## Backtesting framework
 At each out-of-sample date:
+
 1. Fit model on data up to time t-1
 2. Forecast one-step VaR for time t
 3. Compare realized return $r_t$ to forecast $VaR_t$
@@ -287,105 +351,9 @@ Backtests currently reported in the pipeline:
 - Christoffersen independence test
 - Conditional coverage test
 
-## Interpretation:
-- Too many violations -> model underestimates risk
-- Too few violations -> model is conservative / overestimates risk
-- Failure of independence -> violations cluster, model misses dynamic risk structure
-
-## Lecture 18 alignment
-```{r, echo = False}
-data_path <- "../data/model_data.csv"
-```
-## Current saved backtest results
-Alpha = 1%
-Out-of-sample observations per model = 846
-Expected violations = 8.46
-
-A. Original pipeline results
-
-1. Historical-Simulation
-
-- Violations: 12
-- Violation rate: 1.42%
-- Kupiec p-value: 0.250
-- Christoffersen p-value: 0.157
-- Conditional coverage p-value: 0.190
-Verdict: strong benchmark; stable and defensible
-
-2. GARCH-Gaussian
-
-- Violations: 22
-- Violation rate: 2.60%
-- Kupiec p-value: 0.0001
-- Christoffersen p-value: 0.598
-- Conditional coverage p-value: 0.0004
-Verdict: clearly too thin-tailed for QQQ left-tail risk
-
-3. GARCH(1,1) Student-t
-
-- Violations: 13
-- Violation rate: 1.54%
-- Kupiec p-value: 0.146
-- Christoffersen p-value: 0.189
-- Conditional coverage p-value: 0.147
-Verdict: acceptable, but no longer best once extension models are included
-
-4. GARCH-FHS
-
-- Violations: 7
-- Violation rate: 0.83%
-- Kupiec p-value: 0.603
-- Christoffersen p-value: 0.732
-- Conditional coverage p-value: 0.824
-Verdict: excellent; slightly conservative but very strong
-
-5. GARCH-Bootstrap
-
-- Violations: 5
-- Violation rate: 0.59%
-- Kupiec p-value: 0.196
-- Christoffersen p-value: 0.807
-- Conditional coverage p-value: 0.420
-Verdict: good, but conservative
-
-6. GJR-GARCH Student-t
-
-- Violations: 15
-- Violation rate: 1.77%
-- Kupiec p-value: 0.042
-- Christoffersen p-value: 0.462
-- Conditional coverage p-value: 0.096
-Verdict: mixed; asymmetry helps somewhat, but not enough
-
-7. GJR-FHS
-
-- Violations: 8
-- Violation rate: 0.95%
-- Kupiec p-value: 0.873
-- Christoffersen p-value: 0.696
-- Conditional coverage p-value: 0.915
-Verdict: best overall in current saved outputs
-
-8. GARCHX(VIX)
-
-- Violations: 16
-- Violation rate: 1.89%
-- Kupiec p-value: 0.020
-- Christoffersen p-value: 0.304
-- Conditional coverage p-value: 0.040
-Verdict: underwhelming; does not outperform plain GARCH; should be treated as experimental
-
-9. CAViaR-SAV
-
-- Violations: 6
-- Violation rate: 0.71%
-- Kupiec p-value: 0.370
-- Christoffersen p-value: 0.030
-- Conditional coverage p-value: 0.063
-Verdict: no longer broken; unconditional coverage is acceptable and the model is slightly conservative, but hit clustering is still a problem and the result is only borderline on overall conditional coverage
-
 ## Plot-based interpretation
 Saved plots are consistent with the backtests:
+
 - Historical Simulation gives a stepwise, slow-moving VaR line but remains competitive
 - GARCH Student-t reacts to stress periods reasonably well
 - GJR-GARCH reacts to stress, but not as effectively as GJR-FHS
@@ -395,37 +363,76 @@ Saved plots are consistent with the backtests:
 - GARCH-Bootstrap is visually close to GARCH-FHS, which is expected for one-step forecasting
 - CAViaR-SAV in the saved results still sits far too close to zero and gets breached constantly
 
+
+## Combined one-day backtest comparison
+
+\tiny
+
+| Rank | Model | Viol. | Rate | Kupiec p | Christoff. p | CC p | Interpretation |
+|---|---|---:|---:|---:|---:|---:|---|
+| 1 | GJR-FHS | 8 | 0.94% | 0.867 | 0.696 | 0.914 | Best overall calibration |
+| 2 | GARCH-FHS | 7 | 0.83% | 0.598 | 0.733 | 0.821 | Excellent, slightly conservative |
+| 3 | GARCH-t-FHS | 6 | 0.71% | 0.366 | 0.770 | 0.637 | Strong, conservative |
+| 4 | GJR-t-FHS | 6 | 0.71% | 0.366 | 0.770 | 0.637 | Strong, conservative |
+| 5 | GARCH-t-Bootstrap | 6 | 0.71% | 0.366 | 0.770 | 0.637 | Strong, deterministic bootstrap |
+| 6 | Historical-Simulation | 12 | 1.42% | 0.253 | 0.157 | 0.191 | Strong benchmark |
+| 7 | GARCH(1,1) | 13 | 1.53% | 0.148 | 0.189 | 0.148 | Acceptable baseline |
+| 8 | CAViaR-SAV | 6 | 0.71% | 0.366 | 0.030 | 0.063 | Coverage ok, clustering issue |
+| 9 | GJR-GARCH | 15 | 1.77% | 0.042 | 0.462 | 0.097 | Mixed, asymmetry not enough |
+| 10 | GARCHX(VIX) | 15 | 1.77% | 0.042 | 0.262 | 0.068 | Benchmark only |
+| 11 | RiskMetrics (0.94) | 18 | 2.12% | 0.004 | 0.392 | 0.012 | Underestimates risk |
+| 12 | GARCH-Gaussian | 22 | 2.59% | 0.0001 | 0.597 | 0.0005 | Too thin-tailed |
+
+\normalsize
+
+Ranking logic:
+
+- strongest models are close to the 1% target **and** pass independence / conditional coverage
+
+## Interpretation:
+- Too many violations -> model underestimates risk
+- Too few violations -> model is conservative / overestimates risk
+- Failure of independence -> violations cluster, model misses dynamic risk structure
+
+## Overall performance evaluation
+
+**Outperformers**
+
+- **GJR-FHS** is the best final model: hit rate closest to target and strongest joint backtesting results
+- **GARCH-FHS** is a very close second and the cleanest simple recommendation
+- **Student-t FHS / bootstrap variants** also perform very well, but are slightly more conservative
+- **Historical Simulation** remains a strong benchmark despite its simplicity
+
+**Models that do not work as well**
+
+- **GARCH-Gaussian** fails clearly: too many violations, so the Gaussian tail is too thin for QQQ downside risk
+- **RiskMetrics** also underestimates tail risk and is dominated by the FHS models
+- **GARCHX(VIX)** is useful as an exogenous-volatility benchmark, but it does not improve forecasting accuracy in the saved outputs
+- **CAViaR-SAV** is no longer a coverage failure, but exception clustering means it is still not as trustworthy as the best FHS models
+
+## Main interpretation
+
+- the biggest improvement comes from **empirical-tail calibration**, not just from changing the volatility recursion
+- asymmetry helps, but **good tail modeling helps more**
+- for QQQ 1% VaR, volatility models with **empirical residual tails** outperform purely parametric Gaussian approaches
+
+## Project limitations
+
+- **Model overlap across runners:** the project now has overlapping model families across the base and extension runners, so the workflow story is less clean
+- **Bootstrap implementation:** bootstrap models reset `np.random.seed(42)` inside the forecast function, making rolling bootstrap forecasts deterministic
+- **GARCHX benchmark:** the new R `garchx` package version is more defensible than the old custom Python version, but it still uses a **Gaussian VaR overlay**, so it is a benchmark rather than a final top model
+- **Legacy/custom GARCHX:** earlier Python GARCHX should only be described as experimental / custom-coded
+- **CAViaR-SAV:** still lacks a proper **Dynamic Quantile-style adequacy test** and still uses a relatively weak optimization routine compared with the original paper
+- **No RiskMetrics-centered final benchmark story:** RiskMetrics is present, but not competitive enough to anchor the final conclusions
+
+**Bottom line:**
+
+The project is already strong on rolling forecasting, model breadth, and backtesting. The main remaining weaknesses are methodological polish rather than the core empirical conclusion.
+
+
 ## References
-*n.d. for no date*
+Engle, R. F., & Manganelli, S. (2002, July). CAViaR: Conditional autoregressive value at risk by regression quantiles [Unpublished manuscript].
 
-Hochreiter, S., & Schmidhuber, J. (1997). Long short-term memory. Neural Computation, 9(8), 1735–1780. doi:10.1162/neco.1997.9.8.1735
+Hansen, P. R., & Lunde, A. (2001, March 8). A comparison of volatility models: Does anything beat a GARCH(1,1)? (Working Paper Series No. 84).
 
-Canadian Wildland Fire Information System. (n.d.). National Fire Database point form (NFDB_point) [Data file]. Retrieved March 8, 2026, from https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_pnt/current_version/NFDB_point.zip
-
-Canadian Wildland Fire Information System. (n.d.). National Fire Database polygon form (NFDB_poly) [Data file]. Retrieved March 8, 2026, from https://cwfis.cfs.nrcan.gc.ca/downloads/nfdb/fire_poly/current_version/NFDB_poly.zip
-
-Esri. (n.d.). Spatial references. ArcGIS Developers. Retrieved from https://developers.arcgis.com/documentation/spatial-references/
-
-##
-National Oceanic and Atmospheric Administration. (2021). HMS smoke polygons annual bundle, 2021 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2021.zip
-
-National Oceanic and Atmospheric Administration. (2022). HMS smoke polygons annual bundle, 2022 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2022.zip
-
-National Oceanic and Atmospheric Administration. (2023). HMS smoke polygons annual bundle, 2023 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2023.zip
-
-National Oceanic and Atmospheric Administration. (2024). HMS smoke polygons annual bundle, 2024 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2024.zip
-
-##
-National Oceanic and Atmospheric Administration. (2025). HMS smoke polygons annual bundle, 2025 [Data file]. Retrieved March 8, 2026, from https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/Annual_Bundles/hms_smoke2025.zip
-
-Ontario Ministry of the Environment, Conservation and Parks. (n.d.). Historical air quality pollutant data. Air Quality Ontario. Retrieved February 13, 2026, from https://www.airqualityontario.com/history/index.php
-
-Open-Meteo. (n.d.). ERA5 archive API [Data set]. Retrieved March 8, 2026, from https://archive-api.open-meteo.com/v1/archive
-
-OpenStreetMap Wiki. (2024). EPSG:3857. Retrieved from https://wiki.openstreetmap.org/wiki/EPSG:3857
-
-##
-
-Statistics Canada. (2025, December 15). New motor vehicle registrations, quarterly, by geographic level (Table 20-10-0025-01) [Data set]. doi:10.25318/2010002501-eng
-
-Statistics Canada. (2026, January 15). Traffic flow dashboard (Catalogue No. 71-607-X) [Interactive data product]. Retrieved February 13, 2026, from https://www150.statcan.gc.ca/n1/pub/71-607-x/71-607-x2022018-eng.htm
+Ratih, I. D., Ulama, B. S. S., & Prastuti, M. (2018). Value-at-risk analysis using ARMAX GARCHX approach for estimating risk of banking subsector stock return’s. IOP Conference Series: Journal of Physics: Conference Series, 974, 012029. doi:10.1088/1742-6596/974/1/012029
