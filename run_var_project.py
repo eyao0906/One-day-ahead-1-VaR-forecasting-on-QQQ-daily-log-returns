@@ -10,7 +10,6 @@ from var_utils import (
     christoffersen_independence_test,
     forecast_caviar_sav,
     forecast_garch,
-    forecast_garchx,
     forecast_gjr_garch,
     forecast_historical_simulation,
     forecast_fhs_garch_t,
@@ -57,7 +56,6 @@ def run_rolling_var(
 
         model_funcs = [
             ("GARCH(1,1)", lambda: forecast_garch(r_train, alpha=alpha)),
-            ("GARCHX(VIX)", lambda: forecast_garchx(r_train, x_train, alpha=alpha, fallback_to_garch=True)),
             ("GJR-GARCH", lambda: forecast_gjr_garch(r_train, alpha=alpha)),
             ("CAViaR-SAV", lambda: forecast_caviar_sav(r_train, alpha=alpha)),
             ("Historical-Simulation", lambda: forecast_historical_simulation(r_train, alpha=alpha, window=hs_window)),
