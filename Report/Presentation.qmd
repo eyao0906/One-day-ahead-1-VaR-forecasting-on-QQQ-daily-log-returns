@@ -273,6 +273,8 @@ $$
 
 Lecture 18’s **Nonparametric Quantile-GARCH SD**: forecast next-step volatility from GARCH, then combine it with the empirical residual tail. That is why FHS gives a more realistic left-tail fit than Gaussian GARCH in this project.
 
+GARCH-FHS and GJR-FHS are semi-parametric models that use a parametric GARCH/GJR volatility fit and a nonparametric empirical residual quantile for VaR.
+
 ##
 **GARCH-FHS**
 
