@@ -8,7 +8,30 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+def find_rscript() -> str:
+    # First try PATH
+    rscript = shutil.which("Rscript") or shutil.which("Rscript.exe")
+    if rscript:
+        return rscript
 
+    # Then try common Windows install locations
+    candidates = []
+    for base in [
+        Path(r"C:\Program Files\R"),
+        Path(r"C:\Program Files (x86)\R"),
+    ]:
+        if base.exists():
+            for child in sorted(base.iterdir(), reverse=True):
+                exe = child / "bin" / "Rscript.exe"
+                if exe.exists():
+                    candidates.append(str(exe))
+
+    if candidates:
+        return candidates[0]
+
+    raise FileNotFoundError(
+        "Rscript.exe not found. Install R or add Rscript to PATH."
+    )
 class WorkflowError(RuntimeError):
     pass
 
@@ -114,7 +137,7 @@ def main() -> None:
     outputs_root.mkdir(parents=True, exist_ok=True)
 
     python_cmd = args.python
-    rscript_cmd = args.rscript
+    rscript_cmd = r"C:\Program Files\R\R-4.3.0\bin\Rscript.exe"
 
     # 1) Base models
     base_cmd = [
@@ -176,6 +199,7 @@ def main() -> None:
     if not args.skip_garchx:
         temp_input_path, created_temp_input = _prepare_r_input(project_root, data_path)
         try:
+            rscript_cmd = find_rscript()
             _run([rscript_cmd, str(project_root / "GARCHX.r")], cwd=project_root)
         finally:
             if temp_input_path is not None:

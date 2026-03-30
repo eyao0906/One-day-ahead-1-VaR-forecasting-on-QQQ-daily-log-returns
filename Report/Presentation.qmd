@@ -381,7 +381,7 @@ Backtests currently reported in the pipeline:
 ## GARCH(1,1) - Gaussian - Bootstrap
 ![](../outputs/plots_ext/var_GARCH-Bootstrap.png){fig-align="center" width="100%"}
 
-## GARCH(1,1) - Student-t - FHS
+## GARCH(1,1) - Student-t - Bootstrap
 ![](../outputs/plots/var_GARCH-t-Bootstrap.png){fig-align="center" width="100%"}
 
 ## Plot-based interpretation
