@@ -358,7 +358,7 @@ For parametric models,
 $$
 \mathrm{VaR} = \mu + \sigma \hat q_\alpha
 $$
-where:$\hat q_\alpha = \Phi^{-1}(\alpha)$ for Gaussian models, $\hat q_\alpha = t_{\nu}^{-1}(\alpha)$ is the standardized Student-t quantile for Student-t models.
+where:$\hat q_\alpha = \Phi^{-1}(\alpha)$ for Gaussian models, $\hat q_\alpha = t_{\nu}^{-1}(\alpha) \sqrt{\frac{\nu - 2}{\nu}}$ is the standardized Student-t quantile for Student-t models.
 
 So the CI is
 $$
@@ -392,30 +392,28 @@ So CAViaR uses a centered empirical proxy interval, not a fully model-based infe
 
 
 ## Plot Results
+**RiskMetrics (0.94)**
 ![](../outputs/riskmetrics/plot_var_riskmetrics.png){fig-align="center" width="100%"}
 
-##
+## GARCH(1,1) - Gaussian
 ![](../outputs/plots_ext/var_GARCH-Gaussian.png){fig-align="center" width="100%"}
 
 ## GARCH(1,1) - Student-t
 ![](../outputs/plots/var_GARCH1,1.png){fig-align="center" width="100%"}
 
-## 
-![](../outputs/riskmetrics/plot_var_riskmetrics.png){fig-align="center" width="100%"}
-
-##
+## GARCHX(VIX)
 ![](../outputs/garchx_only/plot_garchx_vix.png){fig-align="center" width="100%"}
 
-##
+## GJR-GARCH - Gaussian
 ![](../outputs/plots/var_GJR-GARCH.png){fig-align="center" width="100%"}
 
 ## GJR-GARCH - Student-t
 ![](../outputs/plots/var_GJR-GARCH.png){fig-align="center" width="100%"}
 
-##
+## Historical Simulation
 ![](../outputs/plots/var_Historical-Simulation.png){fig-align="center" width="100%"}
 
-##
+## CaViaR-SAV
 ![](../outputs/plots/var_CAViaR-SAV.png){fig-align="center" width="100%"}
 
 ## GARCH(1,1) - Gaussian - FHS
