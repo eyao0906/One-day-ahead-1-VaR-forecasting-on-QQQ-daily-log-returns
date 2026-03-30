@@ -340,34 +340,37 @@ Backtests currently reported in the pipeline:
 - Conditional coverage test
 
 ## Forecast Uncertainty: 95% CI for VaR
-
 The common idea is an asymptotic quantile confidence interval:
 $$
-\hat q_\alpha \pm z_{0.975}\,\mathrm{SE}(\hat q_\alpha),
-\qquad z_{0.975}\approx 1.96
+\hat q_\alpha \pm 1.96\,\mathrm{SE}(\hat q_\alpha)
 $$
+
 with
 $$
 \mathrm{SE}(\hat q_\alpha)
 =
 \sqrt{\frac{\alpha(1-\alpha)}{n\,f(\hat q_\alpha)^2}}.
 $$
-the tail quantile estimate $\hat q_\alpha$, the density at that quantile, $f(\hat q_\alpha)$, the effective sample size $n$
+$\hat q_\alpha$ is the fitted tail quantile, $f(\hat q_\alpha)$ is the density at that quantile, $n$ is the effective sample size.
+
+##
+For parametric models,
 $$
-\mathrm{VaR} = \mu + \sigma z_\alpha
-\qquad \text{with} \qquad
-z_\alpha = \Phi^{-1}(\alpha)
+\mathrm{VaR} = \mu + \sigma \hat q_\alpha
 $$
+where:$\hat q_\alpha = \Phi^{-1}(\alpha)$ for Gaussian models, $\hat q_\alpha = t_{\nu}^{-1}(\alpha)$ is the standardized Student-t quantile for Student-t models.
+
+So the CI is
 $$
 \mathrm{CI}_{95\%}
 =
 \mu + \sigma
 \left(
-z_\alpha
+\hat q_\alpha
 \pm
 1.96 \cdot
-\sqrt{\frac{\alpha(1-\alpha)}{n\,\phi(z_\alpha)^2}}
-\right)
+\sqrt{\frac{\alpha(1-\alpha)}{n\,f(\hat q_\alpha)^2}}
+\right).
 $$
 
 ## 95% CI: models with different construction
@@ -472,13 +475,11 @@ Ranking logic:
 - strongest models are close to the 1% target **and** pass independence / conditional coverage
 
 ## Interpretation:
-- Too many violations -> model underestimates risk
-- Too few violations -> model is conservative / overestimates risk
-- Failure of independence -> violations cluster, model misses dynamic risk structure
+Too many violations -> model underestimates risk
 
-GARCH-t-FHS, GJR-t-FHS, and GARCH-t-Bootstrap are exact ties in the integrated file.
+Too few violations -> model is conservative / overestimates risk
 
-CAViaR-SAV is above GJR-GARCH and GARCHX because its hit rate is much closer to the 1% target, even though its independence result is weak. That matches the current project interpretation that empirical-tail FHS models are strongest, while CAViaR still has clustering issues and the package GARCHX is more of a comparison benchmark.
+Failure of independence -> violations cluster, model misses dynamic risk structure
 
 ## Overall performance evaluation
 
