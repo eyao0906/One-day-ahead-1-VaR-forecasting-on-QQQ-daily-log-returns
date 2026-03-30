@@ -52,7 +52,6 @@ def run_rolling_var(
         test_row = df.iloc[t]
 
         r_train = train["log_ret"].to_numpy()
-        x_train = train["vix_close"].to_numpy()
 
         model_funcs = [
             ("GARCH(1,1)", lambda: forecast_garch(r_train, alpha=alpha)),
@@ -69,6 +68,8 @@ def run_rolling_var(
             try:
                 fc = func()
                 var = float(fc.var)
+                lower_bound = float(fc.meta.get("lower_bound", var)) if isinstance(fc.meta, dict) else var
+                upper_bound = float(fc.meta.get("upper_bound", var)) if isinstance(fc.meta, dict) else var
                 hit = int(realized < var)
 
                 row = {
@@ -76,13 +77,16 @@ def run_rolling_var(
                     "Model": name,
                     "alpha": alpha,
                     "VaR": var,
+                    "lower_bound": lower_bound,
+                    "upper_bound": upper_bound,
                     "Return": realized,
                     "Violation": hit,
                 }
 
-                # keep useful metadata if present
                 if isinstance(fc.meta, dict):
                     for k, v in fc.meta.items():
+                        if k in {"lower_bound", "upper_bound"}:
+                            continue
                         if np.isscalar(v):
                             row[f"meta_{k}"] = float(v) if v == v else np.nan
 

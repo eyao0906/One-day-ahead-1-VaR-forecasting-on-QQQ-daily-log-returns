@@ -24,6 +24,8 @@ def main() -> None:
         plt.figure(figsize=(12, 4))
         plt.plot(g["Date"], g["Return"], label="Realized Return", linewidth=1, color="black", alpha=0.7)
         plt.plot(g["Date"], g["VaR"], label=f"Forecast VaR ({model})", linewidth=1.5, color="red")
+        if {"lower_bound", "upper_bound"}.issubset(g.columns):
+            plt.fill_between(g["Date"], g["lower_bound"], g["upper_bound"], alpha=0.15, color="red", label="95% CI")
         viol = g[g["Violation"] == 1]
         if not viol.empty:
             plt.scatter(viol["Date"], viol["Return"], s=20, color="blue", label="Violations", zorder=5)

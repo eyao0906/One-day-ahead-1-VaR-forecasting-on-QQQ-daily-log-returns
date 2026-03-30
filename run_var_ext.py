@@ -57,11 +57,13 @@ def run_rolling_var(
         ]
         realized = float(test_row["log_ret"])
         date = test_row["Date"]
-        
+
         for name, func in model_funcs:
             try:
                 fc = func()
                 var = float(fc.var)
+                lower_bound = float(fc.meta.get("lower_bound", var)) if isinstance(fc.meta, dict) else var
+                upper_bound = float(fc.meta.get("upper_bound", var)) if isinstance(fc.meta, dict) else var
                 hit = int(realized < var)
 
                 row = {
@@ -69,12 +71,16 @@ def run_rolling_var(
                     "Model": name,
                     "alpha": alpha,
                     "VaR": var,
+                    "lower_bound": lower_bound,
+                    "upper_bound": upper_bound,
                     "Return": realized,
                     "Violation": hit,
                 }
 
                 if isinstance(fc.meta, dict):
                     for k, v in fc.meta.items():
+                        if k in {"lower_bound", "upper_bound"}:
+                            continue
                         if np.isscalar(v):
                             row[f"meta_{k}"] = float(v) if v == v else np.nan
 

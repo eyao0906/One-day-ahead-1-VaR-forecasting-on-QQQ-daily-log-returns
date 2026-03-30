@@ -18,6 +18,59 @@ def _safe_quantile(alpha: float) -> float:
     return float(np.clip(alpha, 1e-4, 0.2))
 
 
+def _z_critical(confidence: float = 0.95) -> float:
+    return float(norm.ppf(0.5 + confidence / 2.0))
+
+
+def _quantile_density_from_sample(sample: np.ndarray, alpha: float) -> float:
+    x = np.asarray(sample, dtype=float)
+    x = x[np.isfinite(x)]
+    n = len(x)
+    if n < 20:
+        return float("nan")
+
+    a = _safe_quantile(alpha)
+    eps = max(2.0 / n, 0.0025)
+    lo = max(1e-4, a - eps)
+    hi = min(0.9999, a + eps)
+    if hi <= lo:
+        hi = min(0.9999, lo + max(1.0 / n, 1e-4))
+
+    q_lo = float(np.quantile(x, lo))
+    q_hi = float(np.quantile(x, hi))
+    width = max(q_hi - q_lo, 1e-8)
+    return float((hi - lo) / width)
+
+
+def _sample_quantile_ci(sample: np.ndarray, alpha: float, point_quantile: float | None = None, confidence: float = 0.95) -> Tuple[float, float]:
+    x = np.asarray(sample, dtype=float)
+    x = x[np.isfinite(x)]
+    if len(x) == 0:
+        raise ValueError("Cannot build a quantile CI from an empty sample.")
+
+    a = _safe_quantile(alpha)
+    q_hat = float(np.quantile(x, a)) if point_quantile is None else float(point_quantile)
+    f_hat = _quantile_density_from_sample(x, a)
+    if not np.isfinite(f_hat) or f_hat <= 0.0:
+        return q_hat, q_hat
+
+    se = np.sqrt(a * (1.0 - a) / (len(x) * (f_hat ** 2)))
+    z = _z_critical(confidence)
+    return float(q_hat - z * se), float(q_hat + z * se)
+
+
+def _parametric_quantile_ci(mu: float, sigma: float, alpha: float, n_eff: int, confidence: float = 0.95) -> Tuple[float, float]:
+    a = _safe_quantile(alpha)
+    if n_eff <= 0:
+        return mu, mu
+
+    q = float(norm.ppf(a))
+    f_q = max(float(norm.pdf(q)), 1e-8)
+    se_q = np.sqrt(a * (1.0 - a) / (n_eff * (f_q ** 2)))
+    z = _z_critical(confidence)
+    return float(mu + sigma * (q - z * se_q)), float(mu + sigma * (q + z * se_q))
+
+
 def forecast_garch_gaussian(returns: np.ndarray, alpha: float = 0.01) -> ForecastResult:
     """Standard GARCH(1,1) with Normal distribution."""
     y = returns * 100.0
@@ -30,7 +83,11 @@ def forecast_garch_gaussian(returns: np.ndarray, alpha: float = 0.01) -> Forecas
 
     q = float(norm.ppf(_safe_quantile(alpha)))
     var = mu + sigma * q
-    return ForecastResult(var=var, meta={"mu": mu, "sigma": sigma})
+    lower_bound, upper_bound = _parametric_quantile_ci(mu, sigma, alpha, n_eff=len(y))
+    return ForecastResult(
+        var=var,
+        meta={"mu": mu, "sigma": sigma, "lower_bound": lower_bound, "upper_bound": upper_bound},
+    )
 
 
 def forecast_fhs_garch(returns: np.ndarray, alpha: float = 0.01) -> ForecastResult:
@@ -43,15 +100,23 @@ def forecast_fhs_garch(returns: np.ndarray, alpha: float = 0.01) -> ForecastResu
     sigma2 = float(res.forecast(horizon=1, reindex=False).variance.values[-1, 0]) / (100.0**2)
     sigma_next = float(np.sqrt(max(sigma2, 1e-12)))
 
-    # FIX: Use numpy isnan mask instead of pandas dropna
     std_resid = res.resid / res.conditional_volatility
     std_resid = std_resid[~np.isnan(std_resid)]
-    
-    # Empirical quantile
+
     q_emp = float(np.quantile(std_resid, _safe_quantile(alpha)))
+    q_lo, q_hi = _sample_quantile_ci(std_resid, alpha, point_quantile=q_emp)
 
     var = mu + sigma_next * q_emp
-    return ForecastResult(var=var, meta={"mu": mu, "sigma": sigma_next, "q_emp": q_emp})
+    return ForecastResult(
+        var=var,
+        meta={
+            "mu": mu,
+            "sigma": sigma_next,
+            "q_emp": q_emp,
+            "lower_bound": float(mu + sigma_next * q_lo),
+            "upper_bound": float(mu + sigma_next * q_hi),
+        },
+    )
 
 
 def forecast_fhs_gjr(returns: np.ndarray, alpha: float = 0.01) -> ForecastResult:
@@ -64,15 +129,23 @@ def forecast_fhs_gjr(returns: np.ndarray, alpha: float = 0.01) -> ForecastResult
     sigma2 = float(res.forecast(horizon=1, reindex=False).variance.values[-1, 0]) / (100.0**2)
     sigma_next = float(np.sqrt(max(sigma2, 1e-12)))
 
-    # FIX: Use numpy isnan mask instead of pandas dropna
     std_resid = res.resid / res.conditional_volatility
     std_resid = std_resid[~np.isnan(std_resid)]
-    
-    # Empirical quantile
+
     q_emp = float(np.quantile(std_resid, _safe_quantile(alpha)))
+    q_lo, q_hi = _sample_quantile_ci(std_resid, alpha, point_quantile=q_emp)
 
     var = mu + sigma_next * q_emp
-    return ForecastResult(var=var, meta={"mu": mu, "sigma": sigma_next, "q_emp": q_emp})
+    return ForecastResult(
+        var=var,
+        meta={
+            "mu": mu,
+            "sigma": sigma_next,
+            "q_emp": q_emp,
+            "lower_bound": float(mu + sigma_next * q_lo),
+            "upper_bound": float(mu + sigma_next * q_hi),
+        },
+    )
 
 
 def forecast_bootstrap_garch(returns: np.ndarray, alpha: float = 0.01, n_boot: int = 10000) -> ForecastResult:
@@ -85,20 +158,20 @@ def forecast_bootstrap_garch(returns: np.ndarray, alpha: float = 0.01, n_boot: i
     sigma2 = float(res.forecast(horizon=1, reindex=False).variance.values[-1, 0]) / (100.0**2)
     sigma_next = float(np.sqrt(max(sigma2, 1e-12)))
 
-    # FIX: Use numpy isnan mask instead of pandas dropna
     std_resid = res.resid / res.conditional_volatility
     std_resid = std_resid[~np.isnan(std_resid)]
-    
-    # Resample standardized residuals
-    np.random.seed(42) # Optional: ensures reproducible bootstrap runs
+
+    np.random.seed(42)  # Optional: ensures reproducible bootstrap runs
     boot_z = np.random.choice(std_resid, size=n_boot, replace=True)
-    
-    # Simulate 1-step returns
+
     boot_returns = mu + sigma_next * boot_z
-    
-    # VaR is the empirical quantile of the simulated returns
+
     var = float(np.quantile(boot_returns, _safe_quantile(alpha)))
-    return ForecastResult(var=var, meta={"mu": mu, "sigma": sigma_next})
+    lower_bound, upper_bound = _sample_quantile_ci(boot_returns, alpha, point_quantile=var)
+    return ForecastResult(
+        var=var,
+        meta={"mu": mu, "sigma": sigma_next, "lower_bound": lower_bound, "upper_bound": upper_bound},
+    )
 
 
 def kupiec_test(violations: np.ndarray, alpha: float) -> Tuple[float, float]:
