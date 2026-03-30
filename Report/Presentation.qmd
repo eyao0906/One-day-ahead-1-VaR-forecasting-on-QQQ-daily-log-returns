@@ -339,6 +339,55 @@ Backtests currently reported in the pipeline:
 - Christoffersen independence test
 - Conditional coverage test
 
+## Forecast Uncertainty: 95% CI for VaR
+
+The common idea is an asymptotic quantile confidence interval:
+$$
+\hat q_\alpha \pm z_{0.975}\,\mathrm{SE}(\hat q_\alpha),
+\qquad z_{0.975}\approx 1.96
+$$
+with
+$$
+\mathrm{SE}(\hat q_\alpha)
+=
+\sqrt{\frac{\alpha(1-\alpha)}{n\,f(\hat q_\alpha)^2}}.
+$$
+the tail quantile estimate $\hat q_\alpha$, the density at that quantile, $f(\hat q_\alpha)$, the effective sample size $n$
+$$
+\mathrm{VaR} = \mu + \sigma z_\alpha
+\qquad \text{with} \qquad
+z_\alpha = \Phi^{-1}(\alpha)
+$$
+$$
+\mathrm{CI}_{95\%}
+=
+\mu + \sigma
+\left(
+z_\alpha
+\pm
+1.96 \cdot
+\sqrt{\frac{\alpha(1-\alpha)}{n\,\phi(z_\alpha)^2}}
+\right)
+$$
+
+## 95% CI: models with different construction
+**GARCH-t-Bootstrap**, **GARCH-Bootstrap**
+
+These do not build the interval from a residual quantile directly: 
+
+1. simulate a one-step return sample,
+2. take the empirical $\alpha$-quantile of simulated returns as VaR,
+3. compute the 95% CI directly on that simulated return quantile. 
+
+**CAViaR-SAV**
+
+- Point forecast comes from the CAViaR recursion.
+- The CI is not Hessian-based.
+- The code takes a recent return window, shifts it so its tail quantile matches the CAViaR point forecast, then applies the sample-quantile CI to that shifted sample.
+
+So CAViaR uses a centered empirical proxy interval, not a fully model-based inferential CI.
+
+
 ## Plot Results
 ![](../outputs/riskmetrics/plot_var_riskmetrics.png){fig-align="center" width="100%"}
 
