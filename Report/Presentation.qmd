@@ -50,9 +50,7 @@ The real goal is not just in-sample fit. The goal is model comparison under real
 
 ## Setup and notation
 
-Let $r_t$ denote the daily log return at time $t$. In several implementations, the code works with a scaled series $y_t = 100\, r_t$ for numerical stability when fitting volatility models.
-
-For one-step-ahead Value-at-Risk at level $\alpha$, the target object is the left-tail conditional quantile $\operatorname{VaR}_{t+1}(\alpha) = q_{t+1\mid t}(\alpha)$, so that ideally
+Let $r_t$ denote the daily log return at time $t$. For one-step-ahead Value-at-Risk at level $\alpha$, the target object is the left-tail conditional quantile $\operatorname{VaR}_{t+1}(\alpha) = q_{t+1\mid t}(\alpha)$, so that ideally
 $$
 \Pr(r_{t+1} < \operatorname{VaR}_{t+1}(\alpha) \mid \mathcal{F}_t) = \alpha.
 $$
@@ -70,7 +68,7 @@ $$
 ##
 When the model is conditionally location-scale, the generic structure is
 $$
-r_{t+1} = \mu_{t+1} + \sigma_{t+1} z_{t+1},
+r_{t+1} = \mu_{t+1} + \sigma_{t+1} \omega_{t+1},
 $$
 which implies the final one-step forecast is
 $$
@@ -190,6 +188,7 @@ and then maps it back to the left-tail return quantile by
 $$
 q_t = -v_t.
 $$
+$r_t$ is the realized return, while $v_t$ is the positive latent tail-risk level that the CAViaR recursion updates. Then negate it to obtain the return-side VaR quantile $q_t = −v_t$.
 
 So the one-step VaR forecast is simply the next autoregressive quantile level.
 $$
@@ -265,13 +264,11 @@ It is still an important benchmark because many more complicated models do not a
 ## Nonparametric Quantile-GARCH SD/Boostrap 
 **Filtered Historical Simulation (FHS)**
 
-FHS fits a GARCH volatility model first, but instead of using a Gaussian or Student-\(t\) quantile at the end, it uses the **empirical quantile of standardized residuals**. So the forecast is
-
+Lecture 18’s **Nonparametric Quantile-GARCH SD**: forecast next-step volatility from Gaussian/Student-t GARCH, then combine it with the empirical residual tail, but instead of using a Gaussian or Student-\(t\) quantile at the end, it uses the **empirical quantile of standardized residuals**. 
 $$
 \widehat{\operatorname{VaR}}_{t+1}(\alpha) = \hat{\mu}_{t+1} + \hat{\sigma}_{t+1}\hat{q}_{\alpha,\mathrm{emp}}
 $$
-
-Lecture 18’s **Nonparametric Quantile-GARCH SD**: forecast next-step volatility from GARCH, then combine it with the empirical residual tail. That is why FHS gives a more realistic left-tail fit than Gaussian GARCH in this project.
+where $\hat{q}_{\alpha,\mathrm{emp}} = \hat{F}^{-1}(\alpha)$ is the distribution of GARCH residuals.
 
 GARCH-FHS and GJR-FHS are semi-parametric models that use a parametric GARCH/GJR volatility fit and a nonparametric empirical residual quantile for VaR.
 
@@ -280,7 +277,7 @@ GARCH-FHS and GJR-FHS are semi-parametric models that use a parametric GARCH/GJR
 
 Filtered Historical Simulation:
 
-- fit GARCH
+- fit GARCH volatility model
 - compute standardized residuals
 - take empirical alpha-quantile of residuals
 - scale by $\hat{\sigma}_{t+1}$
@@ -291,38 +288,13 @@ Filtered Historical Simulation:
 Same empirical residual-quantile idea as FHS, but applied after fitting GJR-GARCH.
 
 ## Residual Bootstrap GARCH
-
-The bootstrap method is another semi-parametric VaR approach. 
-
-For the **one-step-ahead** VaR problem in this project, bootstrap and FHS are mechanically very close.
-
-FHS computes
-$$
-\widehat{\operatorname{VaR}}_{t+1}(\alpha)
-=
-\hat{\mu}_{t+1} + \hat{\sigma}_{t+1}\hat{q}_{\alpha,\mathrm{emp}}
-$$
-where $\hat{q}_{\alpha,\mathrm{emp}}$ is the empirical quantile of the standardized residuals.
-
-##
-Bootstrap instead resamples those same standardized residuals, forms
+Bootstrap fits GARCH first, then resamples the fitted standardized residuals, simulates many one-step returns, 
 $$
 r_{t+1}^{*(i)} = \hat{\mu}_{t+1} + \hat{\sigma}_{t+1} z_{t+1}^{*(i)},
 $$
-and then takes the empirical quantile across the simulated returns.
+and takes the empirical $\alpha$-quantile of those simulated returns as VaR.
 
 So for one-step forecasting, bootstrap is essentially just a simulation-based way to recover the same empirical residual tail used by FHS. That is why, in this project, bootstrap and FHS give very similar results.
-
-##
-**GARCH-Bootstrap**
-
-One-step residual bootstrap:
-
-- fit GARCH
-- resample standardized residuals
-- simulate one-step return
-- take empirical alpha-quantile of simulated returns
-For one-step forecasting this is very close to FHS in practice.
 
 ## Backtesting framework
 At each out-of-sample date:
@@ -335,9 +307,9 @@ At each out-of-sample date:
 
 Backtests currently reported in the pipeline:
 
-- Kupiec unconditional coverage test
-- Christoffersen independence test
-- Conditional coverage test
+- **Kupiec unconditional coverage test**: higher is better. Low means the violation rate is too far from the target.
+- **Christoffersen independence test**: higher is better. Low means violations are clustering instead of arriving independently.
+- **Conditional coverage test**: higher is better. Joint check, high means the model gets both the overall hit rate and the timing pattern more right.
 
 ## Forecast Uncertainty: 95% CI for VaR
 The common idea is an asymptotic quantile confidence interval:
@@ -374,19 +346,13 @@ $$
 $$
 
 ## 95% CI: models with different construction
-**GARCH-t-Bootstrap**, **GARCH-Bootstrap**
+**FHS:** take the empirical $\alpha$-quantile of the standardized residuals, form its sample-quantile 95% CI
 
-These do not build the interval from a residual quantile directly: 
+**Bootstrap:** resample standardized residuals, generate a simulated one-step return sample, take the empirical $\alpha$-quantile of those simulated returns as VaR, and then build the 95% CI on that simulated-return quantile.
 
-1. simulate a one-step return sample,
-2. take the empirical $\alpha$-quantile of simulated returns as VaR,
-3. compute the 95% CI directly on that simulated return quantile. 
+**Historical Simulation:** confidence interval is the standard sample-quantile CI computed on the same rolling window.
 
-**CAViaR-SAV**
-
-- Point forecast comes from the CAViaR recursion.
-- The CI is not Hessian-based.
-- The code takes a recent return window, shifts it so its tail quantile matches the CAViaR point forecast, then applies the sample-quantile CI to that shifted sample.
+**CAViaR-SAV*:**Take the point forecast from the CAViaR recursion, shift a recent return window so its tail quantile matches that forecast, and then apply a sample-quantile 95% CI to that shifted sample.
 
 So CAViaR uses a centered empirical proxy interval, not a fully model-based inferential CI.
 
@@ -471,6 +437,9 @@ So CAViaR uses a centered empirical proxy interval, not a fully model-based infe
 Ranking logic:
 
 - strongest models are close to the 1% target **and** pass independence / conditional coverage
+- Kupiec p checks whether it was wrong the right number of times.
+- Christoffersen p checks whether those mistakes were randomly spread out.
+- CC p checks both together.
 
 ## Interpretation:
 Too many violations -> model underestimates risk
