@@ -1,6 +1,6 @@
 ---
 title: "One-Day-Ahead 1% VaR Forecasting on QQQ Daily Log Returns"
-subtitle: "A class report on rolling VaR comparison, backtesting, and forecast uncertainty"
+subtitle: "A stepwise model-selection study"
 author: "Ethan Yao"
 format:
   pdf:
@@ -18,69 +18,53 @@ execute:
 
 # Introduction
 
-Value-at-Risk (VaR) is a standard summary of downside market risk. A one-day-ahead 1% VaR forecast gives the conditional lower-tail threshold for tomorrow's return such that only about 1% of outcomes are expected to fall below it, given information available today. This report studies that question for QQQ daily log returns using a rolling out-of-sample forecasting design.
+This report studies one-day-ahead 1% Value-at-Risk (VaR) forecasting for QQQ daily log returns. The goal is not to present a flat catalog of models. Instead, the report follows the way a modeler would actually work through the problem: begin with simple lecture-aligned baselines, check where they fail, use that evidence to motivate the next modeling choice, and continue until a convincing final model emerges.
 
-The project compares several classes of VaR models: parametric volatility-based methods, semi-parametric empirical-tail methods, a nonparametric benchmark, a direct quantile model, and an exogenous-volatility benchmark using VIX. The empirical results indicate that the most effective models in this application are those that combine dynamic volatility estimation with empirical tail calibration. In particular, **GJR-FHS** emerges as the strongest overall specification, with **GARCH-FHS** a close second. Historical Simulation remains a strong benchmark, whereas Gaussian-tail specifications tend to underestimate left-tail risk.
+That stepwise logic matters here because the central issue is not just volatility forecasting. For 1% left-tail risk, the main challenge is tail calibration. A model may forecast conditional variance reasonably well and still produce poor VaR forecasts if its lower-tail distribution is too thin. The evidence in this project shows exactly that pattern. Gaussian volatility-based baselines are natural starting points, but they underestimate downside risk for QQQ. Student-$t$ innovations help, and asymmetric volatility helps somewhat, but the biggest improvement comes from replacing parametric tail assumptions with empirical tail calibration through filtered historical simulation (FHS) or closely related bootstrap ideas.
 
-The report is written for classmates and has two purposes. First, it explains the main ideas behind one-day-ahead VaR forecasting and the distinctions among the competing methods. Second, it uses the saved project outputs to evaluate which modeling choices perform best in this specific QQQ application.
+Using the current saved project outputs, the final model-selection story is:
+
+- start with **RiskMetrics** and **Gaussian GARCH(1,1)** as baseline volatility-VaR models,
+- move to **Student-$t$ GARCH(1,1)** when Gaussian tails prove too thin,
+- explore two next directions: richer GARCH-family extensions and alternative nonparametric/direct-quantile approaches,
+- then follow the strongest remaining path from Lecture 18 by using **empirical residual tails**,
+- and arrive at **GJR-FHS** as the best final model, with **GARCH-FHS** very close behind.
+
+The full integrated comparison uses the current saved forecast and backtest outputs with a common out-of-sample length of 848 trading days. When older notes conflict with the saved files, this report follows the saved outputs.
 
 # Historical Background
 
-Modern VaR became especially prominent during the 1990s, when financial institutions sought a compact measure of market risk over a fixed horizon and confidence level. A major practical milestone was J.P. Morgan's *RiskMetrics* framework, which popularized variance-based VaR measurement and helped standardize daily risk reporting. The 1996 Basel amendment then gave VaR regulatory significance by allowing banks to use internal risk models, subject to formal backtesting requirements.
+VaR became especially prominent in the 1990s as financial institutions looked for a compact summary of downside market risk. J.P. Morgan's *RiskMetrics* framework was a major practical milestone because it popularized daily variance-based VaR measurement using exponentially weighted volatility updating. That framework also strongly shaped classroom and industry treatments of market risk, which is why RiskMetrics remains a natural baseline in a project like this.
 
-The econometric foundations of VaR forecasting are closely tied to volatility modeling. Engle's ARCH model and Bollerslev's GARCH extension established a framework for capturing volatility clustering, one of the most persistent empirical features of financial returns. Even when returns themselves exhibit little serial dependence, their conditional variance is often highly persistent, making dynamic volatility forecasts a natural basis for conditional tail-risk measurement.
+The econometric foundation behind modern VaR forecasting comes from conditional heteroskedasticity models. Engle's ARCH model and Bollerslev's GARCH extension formalized the idea that financial returns have time-varying conditional variance, with volatility clustering as a central stylized fact. Once volatility is modeled dynamically, one-step conditional quantiles can be constructed by combining the conditional mean, the conditional standard deviation, and an assumed or estimated innovation quantile.
 
-As VaR became more widely used, attention turned from construction to validation. Kupiec (1995) proposed the unconditional coverage test, which examines whether the observed frequency of VaR exceedances matches the nominal level. Christoffersen (1998) extended this logic by emphasizing independence: a satisfactory VaR model should not only produce the correct number of violations on average, but should also avoid clustering those violations through time. These tests remain standard tools in empirical VaR evaluation.
+As VaR use expanded, evaluation became just as important as construction. Kupiec (1995) proposed the unconditional coverage test, which checks whether the observed violation rate matches the nominal level. Christoffersen (1998) added the independence test, emphasizing that good VaR forecasts should not produce clustered exceptions. Their joint conditional coverage test remains a standard benchmark for VaR backtesting.
 
-A further development was the move away from fully parametric tail assumptions. Barone-Adesi, Giannopoulos, and Vosper (1999) developed Filtered Historical Simulation (FHS), which combines a parametric volatility forecast with the empirical distribution of standardized residuals. This hybrid approach is particularly attractive in financial applications, where volatility dynamics may be captured reasonably well by GARCH-type models, while the innovation distribution often exhibits heavier tails than the Gaussian benchmark allows.
+A second important development was the move away from purely Gaussian tails. Financial return tails are often heavier than Gaussian theory suggests, so it became common to use Student-$t$ innovations or semi-parametric approaches. Barone-Adesi, Giannopoulos, and Vosper (1999) proposed Filtered Historical Simulation, which combines a volatility model with an empirical residual tail. This is especially relevant in the present project, because the final empirical lesson is that empirical tail calibration contributes more than simply changing the volatility recursion.
 
-A different branch of the literature models the quantile directly rather than modeling the full conditional distribution first. Engle and Manganelli's CAViaR framework is the leading example. In that setting, the conditional quantile itself evolves dynamically and is estimated by minimizing a quantile-regression objective. This is theoretically appealing, though in practice it requires careful optimization and dedicated adequacy testing.
+A different line of work models the conditional quantile directly instead of modeling the full conditional distribution first. Engle and Manganelli's CAViaR framework is the best-known example. It is theoretically appealing because VaR itself is the object of interest, but it also requires careful optimization and adequacy testing.
 
-Finally, there has been sustained interest in extending conditional variance models to include exogenous variables. In this project, that role is played by VIX through a GARCHX specification. This benchmark asks whether implied market volatility adds incremental information about next-day QQQ downside risk beyond what is already contained in lagged returns.
+Finally, there is a broad literature on extending volatility models with external predictors. Here that role is played by VIX in a GARCHX benchmark. Economically, that is sensible: VIX reflects market-implied uncertainty. Empirically, though, the question is whether it improves one-day QQQ VaR enough to justify the extra structure.
 
 # Purpose Statement and Mathematical Development
 
-## Purpose
+## VaR and the forecasting objective
 
 Let $r_t$ denote the QQQ daily log return,
 
 $$
-r_t = \log\left(\frac{P_t}{P_{t-1}}\right),
+r_t = \log\left(\frac{P_t}{P_{t-1}}\right).
 $$
 
-where $P_t$ is the adjusted closing price. The one-day-ahead 1% VaR is the conditional lower-tail quantile satisfying
+For tail probability $\alpha = 0.01$, the one-day-ahead VaR is the conditional lower-tail quantile satisfying
 
 $$
 \Pr\bigl(r_{t+1} < \operatorname{VaR}_{t+1}(0.01) \mid \mathcal{F}_t\bigr)=0.01.
 $$
 
-The project is concerned with return-space forecasting, so the object of interest is the conditional 1% quantile of $r_{t+1}$ rather than a loss measure in dollar units. The practical objective is not in-sample fit, but out-of-sample calibration: which model most reliably forecasts next-day downside risk under a realistic rolling exercise?
+So a 1% VaR forecast is a threshold that should be breached on roughly 1% of future days if the model is well calibrated.
 
-## Rolling forecasting design
-
-The saved project pipeline uses 2,824 complete QQQ/VIX observations after cleaning, spanning 2015-01-05 to 2026-03-27. The initial training fraction is 70%, giving:
-
-- initial training size: 1,976 observations,
-- out-of-sample size: 848 one-day forecasts,
-- first forecast date: 2022-11-08,
-- expected number of 1% violations: 8.48.
-
-At each out-of-sample date $t$, the procedure is:
-
-1. estimate the model using information available through day $t-1$,
-2. produce a one-day-ahead VaR forecast for day $t$,
-3. observe the realized return $r_t$,
-4. record the hit indicator
-   $$
-   I_t = \mathbf{1}\{r_t < \widehat{\operatorname{VaR}}_t\},
-   $$
-5. evaluate the resulting hit sequence with standard backtests.
-
-This forecasting design is appropriate because VaR is a risk-management tool. The relevant question is whether a model remains calibrated when used sequentially in real time, not whether it explains the historical sample retrospectively.
-
-## Common location-scale structure
-
-Several of the models can be written in conditional location-scale form,
+For many models in this project, the return forecast has the location-scale form
 
 $$
 r_{t+1} = \mu_{t+1} + \sigma_{t+1} z_{t+1},
@@ -89,166 +73,57 @@ $$
 which implies
 
 $$
-\operatorname{VaR}_{t+1}(\alpha)=\mu_{t+1}+\sigma_{t+1}q_\alpha.
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}\hat q_\alpha.
 $$
 
-The comparison therefore reduces to two central modeling questions:
+This decomposition is the organizing principle of the whole report. Different models differ in two ways:
 
-- how the conditional scale $\sigma_{t+1}$ is forecast, and
-- how the tail quantile $q_\alpha$ is determined.
+1. how they forecast $\sigma_{t+1}$,
+2. how they obtain the tail quantile $\hat q_\alpha$.
 
-This decomposition provides a useful way to organize the competing methods.
+The stepwise model-selection story is really the story of improving one or both of those components.
 
-## Models used in the project
+## Rolling out-of-sample design
 
-### GARCH(1,1): parametric volatility baseline
+The saved integrated outputs use:
 
-The standard GARCH(1,1) model takes
+- 2,824 cleaned observations,
+- a 70% initial training split,
+- 848 one-step-ahead out-of-sample forecasts,
+- expected 1% violations: 8.48.
 
-$$
-\varepsilon_t = r_t - \mu,
-$$
+At each forecast origin, the model is re-estimated using data available up to that date, then used to forecast next-day VaR. This rolling design is appropriate because VaR is a sequential risk-management tool, not an in-sample fitting exercise.
 
-$$
-\sigma_t^2 = \omega + \alpha \varepsilon_{t-1}^2 + \beta \sigma_{t-1}^2.
-$$
+## Violation indicator
 
-In the saved implementation, the main GARCH baseline uses Student-$t$ innovations. The corresponding one-step VaR forecast is
-
-$$
-\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}q^{(t)}_{\alpha,\,t},
-$$
-
-where $q^{(t)}_{\alpha,\,t}$ is the fitted standardized Student-$t$ quantile. This serves as a transparent parametric benchmark: volatility is dynamic, but tail behavior is still imposed through a parametric distribution.
-
-### GJR-GARCH: leverage-sensitive parametric baseline
-
-To allow asymmetry in volatility responses, GJR-GARCH uses
+Given a forecast $\widehat{\operatorname{VaR}}_t$, define the violation indicator by
 
 $$
-\sigma_t^2 = \omega + \alpha \varepsilon_{t-1}^2 + \gamma \varepsilon_{t-1}^2 I(\varepsilon_{t-1}<0) + \beta \sigma_{t-1}^2.
+I_t = \mathbf{1}\{r_t < \widehat{\operatorname{VaR}}_t\}.
 $$
 
-When $\gamma>0$, negative return shocks raise future volatility more than positive shocks of the same magnitude. This feature is empirically plausible for equity returns and makes GJR-GARCH a natural extension of the symmetric GARCH baseline.
-
-### Historical Simulation: nonparametric benchmark
-
-Historical Simulation uses the empirical lower-tail quantile of the most recent $W$ returns,
-
-$$
-\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\operatorname{Quantile}_\alpha(r_{t-W+1},\dots,r_t).
-$$
-
-In the saved project, $W=250$. This method is transparent and assumption-light, though it can adjust slowly when volatility changes abruptly.
-
-### Filtered Historical Simulation: semi-parametric empirical-tail VaR
-
-Filtered Historical Simulation first estimates a volatility model and then applies the empirical lower-tail quantile of the standardized residuals:
-
-$$
-\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}\hat q_{\alpha,\mathrm{emp}}.
-$$
-
-This is the central methodological result of the project. Volatility dynamics are modeled parametrically, but the innovation tail is learned from the residual distribution rather than imposed through a thin Gaussian shape. The saved workflow contains both Gaussian-based and Student-$t$-based FHS variants:
-
-- GARCH-FHS,
-- GJR-FHS,
-- GARCH-t-FHS,
-- GJR-t-FHS.
-
-### Residual bootstrap VaR
-
-The bootstrap variants resample standardized residuals, simulate one-step returns, and estimate VaR as the empirical 1% quantile of the simulated distribution:
-
-$$
-r_{t+1}^{*(i)} = \hat\mu_{t+1}+\hat\sigma_{t+1} z_{t+1}^{*(i)}.
-$$
-
-The VaR estimate is then the empirical $\alpha$-quantile across the simulated returns. For a one-step forecast horizon, this is mechanically close to FHS, which helps explain why the empirical results are similar.
-
-### CAViaR-SAV: direct quantile dynamics
-
-The implemented CAViaR specification is the Symmetric Absolute Value (SAV) form. The code evolves the positive VaR magnitude by
-
-$$
-v_t = \beta_0 + \beta_1 v_{t-1} + \beta_2 |r_{t-1}|,
-$$
-
-and maps back to the left-tail quantile through
-
-$$
-q_t = -v_t.
-$$
-
-Parameters are estimated by minimizing the quantile check-loss function
-
-$$
-L(\beta)=\sum_t \rho_\alpha\bigl(r_t-q_t(\beta)\bigr),
-$$
-
-where
-
-$$
-\rho_\alpha(u)=u\bigl(\alpha-I(u<0)\bigr).
-$$
-
-Conceptually, this is attractive because it models the quantile directly. In the present project, however, it should be interpreted as exploratory rather than fully developed: only the SAV form is implemented, optimization is limited, and Dynamic Quantile-style adequacy testing is not included.
-
-### RiskMetrics: historically important benchmark
-
-RiskMetrics uses the exponentially weighted recursion
-
-$$
-\sigma_t^2 = \lambda \sigma_{t-1}^2 + (1-\lambda)r_{t-1}^2,
-$$
-
-with $\lambda=0.94$ in the saved benchmark. It is historically important and easy to explain, but it relies on a Gaussian tail mapping and is therefore expected to struggle when downside tails are heavier than Gaussian theory suggests.
-
-### GARCHX(VIX): exogenous-volatility benchmark
-
-The separate R benchmark uses the `garchx` package. In each rolling window, returns are demeaned and VIX is standardized, giving the conditional variance structure
-
-$$
-y_t = r_t - \mu,
-$$
-
-$$
-\sigma_t^2 = \omega + \alpha y_{t-1}^2 + \beta \sigma_{t-1}^2 + \delta x_t,
-$$
-
-where $x_t$ is the standardized VIX regressor. The current script converts the volatility forecast into VaR through a Gaussian quantile:
-
-$$
-\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\mu+\hat\sigma_{t+1|t}\Phi^{-1}(\alpha).
-$$
-
-This is best interpreted as a package-based Gaussian-QML GARCHX comparison benchmark. It is cleaner than the earlier custom implementation, but it remains a parametric-tail method rather than an empirical-tail specification.
+If the model is correctly calibrated at the 1% level, the sequence $I_t$ should have mean close to $0.01$, and the hits should not cluster systematically.
 
 # Data Example with Representative Code
 
-## Data setting and forecasting context
+The project uses QQQ adjusted close data to form daily log returns, and VIX closing values only for the GARCHX benchmark. Since this is a modeling report rather than a workflow log, the representative code below focuses only on forecast construction and evaluation logic.
 
-The project uses QQQ adjusted closing prices and VIX closing values. QQQ daily log returns are the target series, while VIX enters only through the GARCHX benchmark. The rolling design produces a sequence of one-step-ahead forecasts, each based only on information available at the forecast origin.
+A useful way to frame the empirical study is that the same asset and same forecast horizon are examined under several increasingly refined VaR constructions. The code excerpts therefore illustrate the methodological differences directly.
 
-A representative forecast date is 2025-04-04, a day with a large negative realized return. This date is informative because it highlights how the models differ when market stress is nontrivial.
+## RiskMetrics variance recursion and VaR mapping
 
-| Date | Model | Forecasted VaR | Realized return | Violation? |
-|---|---|---:|---:|---:|
-| 2025-04-04 | GJR-FHS | -0.07956 | -0.06412 | 0 |
-| 2025-04-04 | GARCH-FHS | -0.07059 | -0.06412 | 0 |
-| 2025-04-04 | GARCH(1,1) | -0.06311 | -0.06412 | 1 |
-| 2025-04-04 | Historical-Simulation | -0.03664 | -0.06412 | 1 |
-| 2025-04-04 | RiskMetrics ($\lambda=0.94$) | -0.04525 | -0.06412 | 1 |
-| 2025-04-04 | GARCHX(VIX) [garchx pkg] | -0.04914 | -0.06412 | 1 |
-| 2025-04-04 | CAViaR-SAV | -0.06293 | -0.06412 | 1 |
+```python
+sigma2 = np.var(r_train[:250])
+for i in range(250, len(r_train)):
+    sigma2 = lam * sigma2 + (1 - lam) * r_train[i] ** 2
 
-This single date does not determine the final ranking, but it makes the model differences concrete. The leading FHS specifications move materially farther into the left tail, while several benchmarks remain too close to zero and are breached.
+sigma_next = np.sqrt(sigma2)
+var_t1 = r_train.mean() + sigma_next * norm.ppf(alpha)
+```
 
-## Representative model-side code
+This is the classic EWMA volatility baseline: simple, historically important, and lecture-aligned.
 
-The report emphasizes code that illustrates how forecasts are formed, rather than data-import or file-handling routines. The following examples are representative of the actual model logic used in the project.
-
-### GARCH one-step VaR mapping
+## Gaussian or Student-$t$ GARCH one-step VaR
 
 ```python
 fit = arch_model(r_train * 100, p=1, q=1, dist="StudentsT").fit(disp="off")
@@ -259,43 +134,42 @@ q_alpha = t.ppf(alpha, df=nu_hat) * np.sqrt((nu_hat - 2) / nu_hat)
 var_t1 = mu_hat + sigma_hat * q_alpha
 ```
 
-This code shows the essential parametric construction: estimate conditional volatility, obtain the fitted innovation quantile, and combine the two to form the next-day VaR.
+The Gaussian version is the same except that $q_\alpha = \Phi^{-1}(\alpha)$.
 
-### Filtered Historical Simulation
+## GARCHX one-step forecast logic
+
+```python
+y_adj = r_train - r_train.mean()
+fit_garchx = garchx(y_adj, order=c(1, 1), xreg=vix_train)
+pred_var = predict(fit_garchx, n.ahead=1, newxreg=vix_t)
+sigma_next = sqrt(pred_var)
+var_t1 = r_train.mean() + sigma_next * qnorm(alpha)
+```
+
+The exogenous regressor is the current VIX input used to help forecast next-day conditional variance.
+
+## GJR-GARCH variance recursion
 
 ```python
 fit = arch_model(r_train * 100, p=1, o=1, q=1, dist="normal").fit(disp="off")
-mu_hat = fit.params.get("mu", 0.0) / 100
 sigma_hat = np.sqrt(fit.forecast(horizon=1, reindex=False).variance.values[-1, 0]) / 100
 z_hat = fit.std_resid.dropna().to_numpy()
 q_emp = np.quantile(z_hat, alpha)
-var_t1 = mu_hat + sigma_hat * q_emp
+var_t1 = fit.params.get("mu", 0.0) / 100 + sigma_hat * q_emp
 ```
 
-This is the key empirical-tail idea in the project: forecast volatility parametrically, but estimate the 1% tail from the empirical residual distribution.
+The important part is the asymmetric volatility structure from the $o=1$ term. The last two lines show the FHS version, which becomes the winning path later in the report.
 
-### Residual bootstrap VaR
+## Historical Simulation quantile extraction
 
 ```python
-z_star = np.random.choice(z_hat, size=B, replace=True)
-r_star = mu_hat + sigma_hat * z_star
-var_t1 = np.quantile(r_star, alpha)
+tail_sample = r_train[-250:]
+var_t1 = np.quantile(tail_sample, alpha)
 ```
 
-For one-step forecasting, the bootstrap approach is very close in spirit to FHS, because both recover the predictive tail from standardized residuals rather than from a fixed parametric distribution.
+This is deliberately simple and provides a serious benchmark precisely because it does not rely on a volatility model.
 
-### RiskMetrics recursion
-
-```python
-sigma2 = np.var(r_train[-250:])
-for x in r_train[-250:]:
-    sigma2 = lam * sigma2 + (1 - lam) * x**2
-var_t1 = np.sqrt(sigma2) * norm.ppf(alpha)
-```
-
-This benchmark is included because it is historically influential and easy to interpret, even though it imposes a Gaussian lower tail.
-
-### CAViaR-SAV update and estimation objective
+## CAViaR-SAV recursion and check-loss objective
 
 ```python
 def sav_path(beta, r, v0):
@@ -305,155 +179,497 @@ def sav_path(beta, r, v0):
         v[t] = beta[0] + beta[1] * v[t-1] + beta[2] * abs(r[t-1])
     return -v
 
-loss = np.sum((alpha - (r < q_path).astype(float)) * (r - q_path))
+u = r - q_path
+loss = np.sum(u * (alpha - (u < 0).astype(float)))
 ```
 
-This snippet illustrates the direct-quantile logic of CAViaR-SAV: the quantile itself evolves recursively and is estimated via the check-loss criterion.
+This shows the direct-quantile idea: the model estimates the quantile itself rather than volatility first.
 
-## Brief provenance clarification
+## FHS empirical residual quantile construction
 
-The final comparison is assembled from multiple saved forecast files rather than a single unified runner. The main Python runner, the extension runner, the RiskMetrics benchmark, and the package-based GARCHX benchmark all share the same out-of-sample length of 848 days, which makes the combined comparison substantively coherent. That provenance matters for transparency, but the focus of the report remains the econometric comparison rather than the repository workflow.
+```python
+fit = arch_model(r_train * 100, p=1, q=1, dist="normal").fit(disp="off")
+mu_hat = fit.params.get("mu", 0.0) / 100
+sigma_hat = np.sqrt(fit.forecast(horizon=1, reindex=False).variance.values[-1, 0]) / 100
+z_hat = fit.std_resid.dropna().to_numpy()
+q_emp = np.quantile(z_hat, alpha)
+var_t1 = mu_hat + sigma_hat * q_emp
+```
 
-# Empirical Results
+This is the core Lecture 18 idea used in the final best models.
 
-## Backtest comparison
+## Bootstrap one-step simulation
 
-Table 2 summarizes the one-day-ahead 1% VaR backtests across the saved outputs. Since all reported models are evaluated on the same 848 out-of-sample observations, the comparison is directly interpretable.
+```python
+boot_z = np.random.choice(z_hat, size=B, replace=True)
+boot_returns = mu_hat + sigma_hat * boot_z
+var_t1 = np.quantile(boot_returns, alpha)
+```
 
-| Model | Source | Violations | Rate | Kupiec p | Christoffersen p | Conditional coverage p |
-|---|---|---:|---:|---:|---:|---:|
-| GJR-FHS | extension runner | 8 | 0.94% | 0.8672 | 0.6961 | 0.9137 |
-| GARCH-FHS | extension runner | 7 | 0.83% | 0.5984 | 0.7327 | 0.8212 |
-| GARCH-t-FHS | main runner | 6 | 0.71% | 0.3664 | 0.7698 | 0.6371 |
-| GJR-t-FHS | main runner | 6 | 0.71% | 0.3664 | 0.7698 | 0.6371 |
-| GARCH-t-Bootstrap | main runner | 6 | 0.71% | 0.3664 | 0.7698 | 0.6371 |
-| Historical-Simulation | main runner | 12 | 1.42% | 0.2529 | 0.1569 | 0.1910 |
-| GARCH(1,1) | main runner | 13 | 1.53% | 0.1480 | 0.1890 | 0.1482 |
-| CAViaR-SAV | main runner | 6 | 0.71% | 0.3664 | 0.0297 | 0.0625 |
-| GJR-GARCH | main runner | 15 | 1.77% | 0.0424 | 0.4621 | 0.0972 |
-| GARCHX(VIX) [garchx pkg] | R benchmark | 15 | 1.77% | 0.0424 | 0.2621 | 0.0679 |
-| GARCH-Bootstrap | extension runner | 5 | 0.59% | 0.1934 | 0.8075 | 0.4166 |
-| RiskMetrics ($\lambda=0.94$) | RiskMetrics benchmark | 18 | 2.12% | 0.0043 | 0.3925 | 0.0117 |
-| GARCH-Gaussian | extension runner | 22 | 2.59% | 0.0001 | 0.5970 | 0.0005 |
+For one-step forecasting, bootstrap is closely related to FHS because both recover the tail from the empirical residual distribution.
 
-Several patterns are especially clear.
+# Stepwise Model Development and Comparison
 
-### 1. The strongest overall evidence favors GJR-FHS and GARCH-FHS
+## 5.1 Baseline Gaussian volatility models
 
-Among the saved outputs, **GJR-FHS** is closest to the nominal 1% violation rate and passes unconditional coverage, independence, and conditional coverage quite comfortably. **GARCH-FHS** performs almost as well and is only slightly more conservative. The backtest evidence therefore supports these two specifications as the strongest practical models in the comparison.
+### Why start here?
 
-### 2. Empirical-tail calibration is more important than simply changing the volatility recursion
+The natural starting point is the lecture-aligned volatility-to-VaR pipeline: first forecast tomorrow's conditional variance, then map that forecast into VaR with a Gaussian quantile. The two baseline models are **RiskMetrics** and **Gaussian GARCH(1,1)**.
 
-The Student-$t$ empirical-tail variants also perform well, and this should be acknowledged directly. However, the implemented comparison shows that the main gain comes from empirical-tail calibration itself. Simply replacing GARCH with GJR-GARCH without adjusting the tail treatment does not solve the left-tail problem. By contrast, once the residual distribution is used empirically, calibration improves substantially.
+These are sensible starting points for three reasons.
 
-### 3. Gaussian tails are too thin for this application
+1. They are historically central in market-risk practice.
+2. They are mathematically transparent.
+3. They separate the core question cleanly: if volatility is modeled reasonably well but the tail is Gaussian, is that enough for 1% VaR on QQQ?
 
-RiskMetrics and GARCH-Gaussian both generate too many violations. The empirical evidence suggests that the issue is not the idea of dynamic volatility forecasting per se, but the inadequacy of a Gaussian lower-tail mapping for QQQ downside risk. In this sample, the left tail is too heavy for a Gaussian quantile to provide a reliable 1% cutoff.
+### RiskMetrics ($\lambda=0.94$)
 
-## Evidence from the plots
-
-The saved VaR plots complement the backtest statistics by showing how the competing methods behave during periods of market stress.
-
-### Best overall model: GJR-FHS
-
-![](../outputs/plots_ext/var_GJR-FHS.png){fig-align="center" width="100%"}
-
-The GJR-FHS VaR line moves sharply downward during volatile episodes while remaining reasonably adaptive once stress subsides. This visual behavior is consistent with its strong backtest performance.
-
-### Close second: GARCH-FHS
-
-![](../outputs/plots_ext/var_GARCH-FHS.png){fig-align="center" width="100%"}
-
-GARCH-FHS exhibits a very similar pattern. Relative to GJR-FHS, it is somewhat less flexible with respect to asymmetry, but its empirical calibration remains excellent.
-
-### Strong benchmark: Historical Simulation
-
-![](../outputs/plots/var_Historical-Simulation.png){fig-align="center" width="100%"}
-
-Historical Simulation is more stepwise and adjusts more slowly. That limitation is visible during turbulent periods, yet its overall performance remains respectable, which helps explain why it remains a useful benchmark.
-
-### Why Gaussian models underperform
-
-![](../outputs/plots_ext/var_GARCH-Gaussian.png){fig-align="center" width="100%"}
-
-The GARCH-Gaussian VaR line remains too close to zero in stressed periods. The plot therefore makes the backtest outcome intuitive: the Gaussian tail does not extend far enough into the lower tail of the return distribution.
-
-### Exogenous-volatility benchmark
-
-![](../outputs/garchx_only/plot_garchx_vix.png){fig-align="center" width="100%"}
-
-The package-based GARCHX benchmark produces a coherent volatility forecast, but its Gaussian tail conversion remains too shallow relative to the best empirical-tail specifications. It is therefore useful as a comparison benchmark, but not as the preferred forecasting model.
-
-## Final model positioning
-
-The empirical comparison supports the following substantive positioning:
-
-- **main recommendation:** GJR-FHS,
-- **close second:** GARCH-FHS,
-- **strong benchmark:** Historical Simulation,
-- **useful parametric baseline:** GARCH(1,1),
-- **comparison benchmark with exogenous information:** package-based GARCHX(VIX),
-- **exploratory direct-quantile model:** CAViaR-SAV.
-
-The Student-$t$ empirical-tail variants also perform very well and should not be ignored. Even so, the most parsimonious interpretation of the full comparison is that GJR-FHS and GARCH-FHS provide the clearest combination of statistical performance, interpretability, and methodological coherence.
-
-# Forecast Uncertainty and Confidence Interval Interpretation
-
-The assignment requires some discussion of forecast uncertainty, and the saved forecast files provide this through reported lower and upper bounds for each VaR forecast. These bounds make it possible to examine uncertainty in the estimated conditional quantile rather than considering only point forecasts.
-
-## Why uncertainty matters
-
-A VaR forecast is itself an estimate, so it inherits uncertainty from several sources:
-
-- finite-sample estimation error,
-- uncertainty in volatility estimation,
-- uncertainty in the tail quantile,
-- model misspecification.
-
-A generic large-sample quantile interval can be written as
+RiskMetrics uses the EWMA recursion
 
 $$
-\hat q_\alpha \pm 1.96\,\mathrm{SE}(\hat q_\alpha),
+\sigma_t^2 = \lambda \sigma_{t-1}^2 + (1-\lambda) r_{t-1}^2,
+\qquad \lambda = 0.94,
+$$
+
+with one-step VaR forecast
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}\Phi^{-1}(\alpha).
+$$
+
+Its purpose in this report is not to win the comparison. Its purpose is to anchor the study with the simplest mainstream volatility-VaR benchmark.
+
+### Gaussian GARCH(1,1)
+
+Gaussian GARCH(1,1) allows more flexible variance dynamics than RiskMetrics:
+
+$$
+r_t = \mu + \varepsilon_t,
+$$
+
+$$
+\varepsilon_t = \sigma_t z_t, \qquad z_t \sim N(0,1),
+$$
+
+$$
+\sigma_t^2 = \omega + \alpha \varepsilon_{t-1}^2 + \beta \sigma_{t-1}^2.
+$$
+
+The one-step VaR mapping is again
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}\Phi^{-1}(\alpha).
+$$
+
+The intuition is straightforward: if volatility clustering is the dominant issue, then GARCH should outperform a simpler EWMA benchmark.
+
+### What do the baseline results show?
+
+The saved outputs show that Gaussian-tail volatility models are not enough.
+
+| Model | Violations | Rate | Kupiec p | Christoffersen p | CC p | Check Loss | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| RiskMetrics ($\lambda=0.94$) | 18 | 2.12% | 0.0043 | 0.3925 | 0.0117 | 0.3781 | Too many breaches; Gaussian tail too shallow |
+| GARCH-Gaussian | 22 | 2.59% | 0.0001 | 0.5970 | 0.0005 | 0.3700 | Worse still; volatility dynamics alone do not fix the tail problem |
+
+The lesson from the first step is already clear. Even when conditional volatility is updated dynamically, the Gaussian lower tail is too thin for QQQ one-day 1% VaR. This motivates the next improvement: keep the GARCH volatility structure, but replace the Gaussian innovation assumption with a heavier-tailed parametric alternative.
+
+## 5.2 Heavier-tailed parametric improvement: Student-$t$ GARCH
+
+### Why is Student-$t$ the next step?
+
+Once Gaussian baselines underperform, the most natural next step is not to abandon volatility modeling, but to admit that the innovation distribution may have heavier tails. Student-$t$ GARCH keeps the same GARCH variance recursion while replacing Gaussian innovations with a Student-$t$ law.
+
+### Mathematical setup
+
+The model is
+
+$$
+r_t = \mu + \varepsilon_t,
+$$
+
+$$
+\varepsilon_t = \sigma_t z_t, \qquad z_t \sim t_\nu \text{ (standardized to unit variance)},
+$$
+
+$$
+\sigma_t^2 = \omega + \alpha \varepsilon_{t-1}^2 + \beta \sigma_{t-1}^2.
+$$
+
+Then the one-step VaR becomes
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1} \hat q^{(t)}_\alpha,
+$$
+
+where $\hat q^{(t)}_\alpha$ is the fitted standardized Student-$t$ 1% quantile.
+
+### Forecast intuition
+
+This model answers a focused question: if the problem with the baseline is primarily tail thickness, can a heavier-tailed parametric distribution repair the VaR forecast without changing the volatility recursion itself?
+
+### Results
+
+| Model | Violations | Rate | Kupiec p | Christoffersen p | CC p | Check Loss | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| GARCH(1,1) [Student-$t$] | 13 | 1.53% | 0.1480 | 0.1890 | 0.1482 | 0.3503 | Better than Gaussian baselines, but still not close enough to the target |
+
+Student-$t$ GARCH clearly improves on the Gaussian baselines. The violation rate drops from 2.59% under Gaussian GARCH to 1.53%, and check loss also improves. That is meaningful evidence that tail thickness matters.
+
+Still, this is not the end of the modeling story. The model remains noticeably above the 1% target and does not yet deliver the strongest overall backtesting performance. So Student-$t$ innovations help, but they do not fully solve the forecasting problem.
+
+At this stage, two natural directions remain:
+
+1. enrich the **volatility model family**,
+2. try **simpler alternative tail approaches** outside that main volatility-extension path.
+
+## 5.3 Extension path 1: GARCH-family extensions
+
+### First extension: GARCHX(VIX)
+
+#### Purpose and intuition
+
+A natural response after Student-$t$ GARCH is to ask whether the volatility forecast itself can be improved by incorporating market information external to QQQ returns. VIX is an obvious candidate because it summarizes market-implied uncertainty and is often interpreted as a forward-looking stress indicator.
+
+#### Mathematical setup
+
+The package-based benchmark used in the saved outputs can be written as
+
+$$
+y_t = r_t - \mu,
+$$
+
+$$
+\sigma_t^2 = \omega + \alpha y_{t-1}^2 + \beta \sigma_{t-1}^2 + \delta x_t,
+$$
+
+where $x_t$ is standardized VIX. The one-step VaR forecast is then
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\mu + \hat\sigma_{t+1|t}\Phi^{-1}(\alpha).
+$$
+
+The benchmark is estimated by Gaussian quasi-maximum likelihood in the `garchx` package, but its final VaR mapping is still Gaussian.
+
+#### Results
+
+| Model | Violations | Rate | Kupiec p | Christoffersen p | CC p | Check Loss | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| GARCHX(VIX) [garchx pkg] | 15 | 1.77% | 0.0424 | 0.2621 | 0.0679 | 0.3549 | Useful benchmark, but not persuasive as an improvement path |
+
+The evidence does not support pushing further in this direction for this project. Although adding VIX is economically sensible, the saved results are weaker than plain Student-$t$ GARCH and much weaker than the best later FHS models. So GARCHX is informative as a comparison benchmark, but it is not the path that produces the final best model.
+
+### Second extension: GJR-GARCH
+
+#### Purpose and intuition
+
+Another natural response is to enrich the variance recursion itself by allowing asymmetric volatility effects. In equity markets, negative returns often increase future volatility more than positive returns of the same size. This is the leverage effect, and GJR-GARCH is designed to capture it.
+
+#### Mathematical setup
+
+The GJR-GARCH recursion is
+
+$$
+r_t = \mu + \varepsilon_t,
+$$
+
+$$
+\sigma_t^2 = \omega + \alpha \varepsilon_{t-1}^2 + \gamma \varepsilon_{t-1}^2 I(\varepsilon_{t-1}<0) + \beta \sigma_{t-1}^2.
+$$
+
+If $\gamma>0$, negative shocks raise future volatility more strongly than positive shocks.
+
+The VaR mapping remains
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}\hat q_\alpha,
+$$
+
+with either Gaussian, Student-$t$, or later empirical residual quantiles.
+
+#### Results before empirical-tail calibration
+
+| Model | Violations | Rate | Kupiec p | Christoffersen p | CC p | Check Loss | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| GJR-GARCH | 15 | 1.77% | 0.0424 | 0.4621 | 0.0972 | 0.3450 | Asymmetry helps the volatility story, but not enough by itself |
+
+GJR-GARCH does not yet dominate Student-$t$ GARCH on violation frequency, but its check loss is slightly better than plain Student-$t$ GARCH, which suggests that asymmetry is adding useful information. So compared with GARCHX, this is the more promising extension path. It still is not the final answer, but it gives a stronger volatility foundation for the next stage.
+
+## 5.4 Extension path 2: Historical / direct-quantile alternatives
+
+### Historical Simulation
+
+#### Purpose and intuition
+
+Historical Simulation is included as a deliberately simple nonparametric benchmark. Instead of estimating a volatility model or assuming a parametric innovation distribution, it asks a practical question: if the next-day tail is approximated by the recent empirical distribution of returns, how competitive is that simple forecast?
+
+#### Mathematical setup
+
+Using a rolling window of size $W=250$,
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\operatorname{Quantile}_\alpha(r_{t-W+1},\ldots,r_t).
+$$
+
+#### Results
+
+| Model | Violations | Rate | Kupiec p | Christoffersen p | CC p | Check Loss | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Historical-Simulation | 12 | 1.42% | 0.2529 | 0.1569 | 0.1910 | 0.4092 | Simple, competitive, and important as a benchmark |
+
+Historical Simulation is a serious benchmark in this project. It is not the best model, but it is clearly competitive. That matters because it keeps the model-comparison story honest: extra structure must earn its place.
+
+### CAViaR-SAV
+
+#### Purpose and intuition
+
+CAViaR follows a different idea entirely. Instead of modeling volatility first and then converting it into VaR, it models the conditional quantile directly. This makes it closely tied to the forecasting target itself.
+
+#### Mathematical setup
+
+The implemented Symmetric Absolute Value (SAV) recursion updates a positive latent risk level by
+
+$$
+v_t = \beta_0 + \beta_1 v_{t-1} + \beta_2 |r_{t-1}|,
+$$
+
+and maps back to the left-tail return quantile by
+
+$$
+q_t = -v_t.
+$$
+
+Parameters are estimated by minimizing the quantile check-loss criterion,
+
+$$
+L(\beta)=\sum_t \rho_\alpha(r_t-q_t(\beta)),
 $$
 
 where
 
 $$
-\mathrm{SE}(\hat q_\alpha)=
-\sqrt{\frac{\alpha(1-\alpha)}{n\,f(\hat q_\alpha)^2}}.
+\rho_\alpha(u)=u\left(\alpha-I(u<0)\right).
+$$
+
+#### What the current implementation includes, and what it does not
+
+The current project uses a simplified SAV-only implementation with light optimization, limited starting values, and no Dynamic Quantile adequacy test. So it should be described fairly as an exploratory direct-quantile benchmark, not as a full implementation of the original paper.
+
+#### Results
+
+| Model | Violations | Rate | Kupiec p | Christoffersen p | CC p | Check Loss | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| CAViaR-SAV | 6 | 0.71% | 0.3664 | 0.0297 | 0.0625 | 0.3400 | Coverage is conservative, but clustering and implementation limits make the evidence unconvincing |
+
+This result is subtle. The model is **not** a catastrophic failure in the saved outputs. In fact, its unconditional coverage and check loss are numerically strong. But the independence test fails, which means the exception timing is not convincing enough, and the simplified implementation makes it hard to push this direction further with confidence in the current project. So the correct conclusion is that the direct-quantile idea is interesting, but the present simplified CAViaR path is not yet persuasive enough to become the main recommendation.
+
+## 5.5 Final improvement: empirical-tail FHS / bootstrap methods
+
+At this point the evidence suggests the following:
+
+- Gaussian baselines are too thin-tailed.
+- Student-$t$ helps, but not enough.
+- GARCHX(VIX) is not a strong direction here.
+- GJR-type asymmetry is more promising than GARCHX.
+- Historical Simulation is a strong benchmark.
+- Simplified CAViaR is interesting but not convincing enough as the main path.
+
+That naturally leads to the final improvement direction from Lecture 18: keep the volatility model, but estimate the lower tail empirically rather than through a fixed parametric quantile.
+
+### Stage 1: apply empirical tails to plain GARCH
+
+#### Purpose and intuition
+
+Filtered Historical Simulation replaces the parametric innovation quantile with the empirical lower-tail quantile of standardized residuals. The idea is simple but powerful: let the volatility model handle scale dynamics, and let the residual data speak for the tail.
+
+#### Mathematical setup
+
+After fitting a volatility model, compute standardized residuals
+
+$$
+\hat z_t = \frac{r_t-\hat\mu_t}{\hat\sigma_t},
+$$
+
+then set
+
+$$
+\hat q_{\alpha,\text{emp}} = \text{empirical } \alpha\text{-quantile of } \{\hat z_t\}.
+$$
+
+The one-step VaR is
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}\hat q_{\alpha,\text{emp}}.
+$$
+
+#### Results for plain GARCH empirical-tail variants
+
+| Model | Violations | Rate | Kupiec p | Christoffersen p | CC p | Check Loss | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| GARCH-FHS | 7 | 0.83% | 0.5984 | 0.7327 | 0.8212 | 0.3499 | Large improvement over Gaussian and Student-$t$ parametric GARCH |
+| GARCH-t-FHS | 6 | 0.71% | 0.3664 | 0.7698 | 0.6371 | 0.3611 | Also strong; somewhat more conservative |
+| GARCH-Bootstrap | 5 | 0.59% | 0.1934 | 0.8075 | 0.4166 | 0.3523 | Good but conservative |
+| GARCH-t-Bootstrap | 6 | 0.71% | 0.3664 | 0.7698 | 0.6371 | 0.3648 | Similar to Student-$t$ FHS |
+
+This is the first major jump in performance. Relative to Gaussian GARCH, empirical-tail GARCH variants move much closer to the desired 1% hit rate and pass the main backtests far more comfortably. That strongly suggests the biggest missing ingredient was tail calibration.
+
+### Stage 2: apply empirical tails to GJR-GARCH
+
+#### Purpose and intuition
+
+If asymmetry added something useful earlier, then the next question is whether asymmetry and empirical tails work even better together.
+
+#### Mathematical setup
+
+The variance recursion is still GJR-GARCH,
+
+$$
+\sigma_t^2 = \omega + \alpha \varepsilon_{t-1}^2 + \gamma \varepsilon_{t-1}^2 I(\varepsilon_{t-1}<0) + \beta \sigma_{t-1}^2,
+$$
+
+but the tail quantile is now empirical rather than Gaussian or Student-$t$:
+
+$$
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}\hat q_{\alpha,\text{emp}}.
+$$
+
+#### Results for GJR empirical-tail variants
+
+| Model | Violations | Rate | Kupiec p | Christoffersen p | CC p | Check Loss | Interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| GJR-FHS | 8 | 0.94% | 0.8672 | 0.6961 | 0.9137 | 0.3402 | Best overall final model |
+| GJR-t-FHS | 6 | 0.71% | 0.3664 | 0.7698 | 0.6371 | 0.3537 | Strong but more conservative |
+
+This final step completes the modeling journey. Compared with plain GARCH-FHS, adding asymmetry through GJR produces the cleanest final calibration: the violation rate is closest to the nominal 1%, and the Kupiec, independence, and conditional coverage tests all look excellent.
+
+### Final lesson from the stepwise path
+
+The biggest overall gain comes from **empirical-tail calibration**, not just from making the volatility recursion more elaborate. Asymmetry helps somewhat, and Student-$t$ helps somewhat, but the decisive improvement arrives when the tail is estimated empirically. That is why the report ends with **GJR-FHS** as the best final model.
+
+# Backtesting and Forecast Evaluation Metrics
+
+The model-comparison story above relies on four evaluation tools. Each should be defined before being interpreted.
+
+## Kupiec unconditional coverage test
+
+The null hypothesis is that the violation probability equals the target level $\alpha$. If $x$ is the number of violations in $n$ forecasts and $\hat\pi=x/n$, the likelihood-ratio statistic is
+
+$$
+LR_{uc} = -2 \log\left[
+\frac{(1-\alpha)^{n-x}\alpha^x}{(1-\hat\pi)^{n-x}\hat\pi^x}
+\right].
+$$
+
+A large p-value means the observed violation rate is plausible under the target 1% rate. A small p-value means the model is systematically too liberal or too conservative.
+
+## Christoffersen independence test
+
+Correct hit frequency is not enough if violations arrive in clusters. The independence test treats the hit sequence as a first-order Markov chain and compares:
+
+- a model where hits are independent through time,
+- a model where hit probability depends on whether the previous day was a hit.
+
+A low p-value indicates violation clustering and therefore poor dynamic calibration.
+
+## Conditional coverage test
+
+The conditional coverage test combines the previous two ideas:
+
+$$
+LR_{cc} = LR_{uc} + LR_{ind}.
+$$
+
+It is the most natural summary test because a good VaR model should get both the overall hit rate and the timing pattern roughly right.
+
+## Check Loss
+
+Because backtests based only on violations ignore the size of forecast errors, the project also uses quantile check loss. The actual formula used in the code is
+
+$$
+\rho_\alpha(u)=u\left(\alpha-I(u<0)\right),
+\qquad u_t = r_t - \widehat{\operatorname{VaR}}_t.
+$$
+
+Equivalently,
+
+$$
+\text{CheckLoss}_t = (r_t-\widehat{\operatorname{VaR}}_t)\left(\alpha-I(r_t<\widehat{\operatorname{VaR}}_t)\right).
+$$
+
+For non-violation days, this becomes approximately $\alpha (r_t-\widehat{\operatorname{VaR}}_t)$, so overly conservative forecasts still incur some loss. For violation days, the loss becomes approximately $(1-\alpha)(\widehat{\operatorname{VaR}}_t-r_t)$, so large missed tail events are penalized much more heavily. Lower check loss is therefore better.
+
+This metric is useful because it evaluates the quality of the full quantile forecast, not just whether the realized return barely crossed the threshold.
+
+# Forecast Uncertainty and 95% Confidence Intervals
+
+## Why point VaR forecasts need uncertainty measures
+
+A VaR forecast is an estimate, not a known population quantity. It depends on estimated volatility, estimated or empirical tail quantiles, and finite-sample information. Reporting only a point VaR hides the fact that the forecast itself is uncertain.
+
+## General quantile-CI logic
+
+Across the project, the common starting point is the large-sample quantile standard error
+
+$$
+\operatorname{SE}(\hat q_\alpha)=
+\sqrt{\frac{\alpha(1-\alpha)}{n f(\hat q_\alpha)^2}},
+$$
+
+which leads to the generic 95% interval
+
+$$
+\hat q_\alpha \pm 1.96\,\operatorname{SE}(\hat q_\alpha).
 $$
 
 For location-scale VaR models,
 
 $$
-\operatorname{VaR}_{t+1}(\alpha)=\mu_{t+1}+\sigma_{t+1}q_\alpha,
+\widehat{\operatorname{VaR}}_{t+1}(\alpha)=\hat\mu_{t+1}+\hat\sigma_{t+1}\hat q_\alpha,
 $$
 
-so uncertainty in the tail quantile propagates directly into uncertainty in the VaR forecast.
+so the quantile interval maps directly into a VaR interval.
 
-## Why interval widths are not perfectly comparable
+## Model-specific CI constructions in this project
 
-An important qualification is that the reported intervals are not constructed identically across all model families.
+The saved `lower_bound` and `upper_bound` columns are not generated by one universal formula. They are model-specific.
 
-- **Parametric Gaussian and Student-$t$ models** use asymptotic quantile-standard-error logic mapped through the location-scale formula.
-- **FHS models** combine parametric volatility estimation with an empirical residual quantile, so their intervals reflect uncertainty in that empirical tail estimate.
-- **Bootstrap models** derive interval information from the simulated predictive distribution.
-- **Historical Simulation** uses a rolling empirical-quantile interval from the raw returns.
-- **CAViaR-SAV** uses a centered empirical proxy interval rather than a full inferential interval derived from a likelihood-based covariance calculation.
+### Gaussian parametric models
 
-Accordingly, interval widths are informative, but they should be interpreted as model-specific measures of VaR uncertainty rather than perfectly homogeneous statistical objects.
-
-## Average interval widths from the saved forecasts
-
-A simple summary is the average width
+For Gaussian models such as Gaussian GARCH, RiskMetrics, and the package-based GARCHX benchmark, the project uses the asymptotic standard error of the Gaussian quantile and maps it through
 
 $$
-\text{width}_t = \text{upper\_bound}_t - \text{lower\_bound}_t.
+\hat\mu + \hat\sigma\left(\Phi^{-1}(\alpha) \pm 1.96\,\operatorname{SE}(\hat q_\alpha)\right).
 $$
 
-Using the saved forecast files, the average widths are:
+### Student-$t$ parametric models
 
-| Model | Mean interval width |
+For Student-$t$ parametric models, the same logic is used but with the standardized Student-$t$ density and quantile replacing the Gaussian ones.
+
+### FHS / empirical residual quantile models
+
+For FHS models, the project takes the empirical $\alpha$-quantile of standardized residuals, estimates quantile uncertainty from the residual sample, and then maps that interval through the one-step volatility forecast.
+
+### Bootstrap models
+
+For bootstrap models, the project resamples standardized residuals, simulates one-step returns, takes the empirical 1% quantile of those simulated returns as VaR, and builds the interval directly from that simulated predictive sample.
+
+### Historical Simulation
+
+Historical Simulation uses the same sample-quantile interval logic, but now the sample is the rolling window of recent raw returns rather than standardized residuals.
+
+### CAViaR-SAV proxy interval construction
+
+CAViaR does not produce a parametric likelihood-based VaR interval in the current workflow. Instead, the project recenters an empirical return sample so that its 1% quantile matches the CAViaR point forecast, then applies sample-quantile interval logic to that shifted sample. This should be interpreted as a proxy interval rather than an exact inferential object of the same type used for parametric GARCH models.
+
+## Why interval widths are informative but not perfectly identical across models
+
+Because the intervals are constructed differently across model classes, their widths are informative but not perfectly homogeneous objects. A narrower interval does not automatically mean a better model, and widths should be interpreted together with backtesting performance.
+
+## Interval-width comparison from the saved outputs
+
+Using the saved `lower_bound` and `upper_bound` columns, the mean interval widths are:
+
+| Model | Mean 95% CI width |
 |---|---:|
 | CAViaR-SAV | 0.02064 |
 | Historical-Simulation | 0.02064 |
@@ -469,69 +685,81 @@ Using the saved forecast files, the average widths are:
 | GARCHX(VIX) [garchx pkg] | 0.00353 |
 | GARCH-Bootstrap | 0.00303 |
 
-Several interpretations follow.
+Three points are worth emphasizing.
 
-### 1. Historical Simulation and CAViaR-SAV are the least precise
+1. **Historical Simulation and CAViaR-SAV have the widest intervals.** That reflects the noisiness of empirical extreme quantiles and, for CAViaR, the proxy nature of the interval construction.
+2. **The leading models combine moderate width with good calibration.** GJR-FHS and GARCH-FHS do not simply minimize width; they balance stable interval behavior with strong backtesting.
+3. **Narrow intervals are not automatically desirable.** Gaussian models have relatively narrow intervals, but their VaR points are too shallow, so those narrow intervals are not a sign of superior risk forecasting.
 
-These two models have the widest average intervals by a substantial margin. For Historical Simulation this is unsurprising, since an extreme empirical quantile estimated from a rolling 250-day window is inherently noisy. For CAViaR-SAV, the large width reflects both quantile uncertainty and the proxy nature of the interval construction in the current implementation.
+# Integrated Final Comparison Table
 
-### 2. The leading FHS models are both well calibrated and reasonably stable
+Table 1 brings the full evidence together. It includes violation counts, backtest p-values, check loss, and a short interpretation for each model.
 
-GJR-FHS and GARCH-FHS are appealing not because they minimize interval width mechanically, but because they combine moderate interval width with strong backtesting performance. That joint behavior is more informative than width alone.
+| Model | Violations | Rate | Kupiec | Christoffersen | CC | Total Check Loss | Concise interpretation |
+|---|---:|---:|---:|---:|---:|---:|---|
+| GJR-FHS | 8 | 0.94% | Pass | Pass | Pass | 0.3402 | Best overall final model; strongest balance of calibration and stability |
+| GARCH-FHS | 7 | 0.83% | Pass | Pass | Pass | 0.3499 | Very close second; empirical tails matter more than extra complexity |
+| GARCH-t-FHS | 6 | 0.71% | Pass | Pass | Pass | 0.3611 | Strong but somewhat conservative |
+| GJR-t-FHS | 6 | 0.71% | Pass | Pass | Pass | 0.3537 | Strong empirical-tail asymmetric model, also conservative |
+| GARCH-t-Bootstrap | 6 | 0.71% | Pass | Pass | Pass | 0.3648 | Similar to Student-$t$ FHS; good but not the cleanest final choice |
+| GARCH-Bootstrap | 5 | 0.59% | Pass | Pass | Pass | 0.3523 | Conservative; useful support for empirical-tail logic |
+| Historical-Simulation | 12 | 1.42% | Pass | Borderline | Pass | 0.4092 | Simple and competitive; important benchmark |
+| GARCH(1,1) [Student-$t$] | 13 | 1.53% | Pass | Pass | Pass | 0.3503 | Clear improvement over Gaussian tails, but not enough |
+| CAViaR-SAV | 6 | 0.71% | Pass | Fail | Borderline | 0.3400 | Interesting direct-quantile result, but not convincing enough yet |
+| GJR-GARCH | 15 | 1.77% | Fail | Pass | Borderline | 0.3450 | Asymmetry helps somewhat, but tail still not calibrated well enough |
+| GARCHX(VIX) [garchx pkg] | 15 | 1.77% | Fail | Pass | Borderline | 0.3549 | Honest comparison benchmark, not a recommended final model |
+| RiskMetrics ($\lambda=0.94$) | 18 | 2.12% | Fail | Pass | Fail | 0.3781 | Historically important baseline, but too thin-tailed here |
+| GARCH-Gaussian | 22 | 2.59% | Fail | Pass | Fail | 0.3700 | Clearly too thin-tailed for QQQ 1% left-tail risk |
 
-### 3. Narrow intervals are not necessarily an advantage when calibration is poor
-
-GARCH-Gaussian, RiskMetrics, and the package-based GARCHX benchmark all have comparatively narrow intervals. Yet their backtest performance is weaker than that of the leading FHS models. A narrow interval around a biased or insufficiently deep VaR forecast is not, by itself, desirable.
-
-### 4. Bootstrap widths should be interpreted with care
-
-The bootstrap variants produce relatively small average widths. For one-step forecasting this is not surprising, since bootstrap and FHS are already closely related. In addition, the current bootstrap implementation is deterministic across rolling iterations because the seed is reset within the forecast function, so the resulting intervals should be interpreted cautiously.
-
-## Practical interpretation
-
-A wider VaR interval indicates greater uncertainty about the location of the next-day 1% threshold; a narrower interval indicates a more concentrated estimate within that model's own construction. The backtest evidence and uncertainty analysis point in the same direction: the most convincing models are those that combine credible calibration with reasonably stable uncertainty behavior. In this project, that description fits **GJR-FHS** and **GARCH-FHS** best.
+The table reinforces the main narrative. The final ranking is not driven by one metric alone. Instead, it reflects the cumulative evidence that empirical-tail GARCH models dominate simple Gaussian volatility-VaR constructions.
 
 # Discussion
 
-The empirical results suggest that the main improvement in this QQQ application comes from **empirical-tail calibration**, not merely from a more elaborate volatility recursion. Dynamic volatility modeling remains essential, but accurate variance forecasts alone are not sufficient if the lower-tail distribution is misspecified.
+The model-comparison exercise points to a fairly clean methodological lesson. For one-day-ahead 1% VaR on QQQ, the hardest part is not simply forecasting volatility; it is forecasting the lower tail well enough once volatility is forecasted.
 
-Asymmetry helps at the margin, which helps explain why GJR-FHS slightly outperforms GARCH-FHS. However, the comparison also shows that asymmetry by itself is not decisive. The more important modeling choice is whether the left tail is learned empirically from standardized residuals or imposed parametrically.
+The first stage of the study shows that classic Gaussian volatility-to-VaR methods are too weak. RiskMetrics and Gaussian GARCH are reasonable baselines, but they systematically underestimate downside risk. The second stage shows that Student-$t$ innovations improve matters in the expected direction. That is evidence that heavier tails are essential. The third stage shows that richer volatility structures alone are not the main answer. GARCHX(VIX) is not persuasive in the saved results, and GJR-GARCH only helps somewhat. The fourth stage shows that Historical Simulation remains a serious benchmark and that direct-quantile modeling through simplified CAViaR is interesting but not yet convincing enough. The final stage shows that once the tail is estimated empirically, performance improves sharply.
 
-Historical Simulation remains an instructive benchmark. It is simpler and slower to adjust than the leading FHS models, yet it performs well enough to remind us that additional complexity must be justified empirically. This is a useful comparison point in a class report, because it shows that sophisticated methods do not automatically dominate straightforward benchmarks.
+So the main substantive lesson is simple: **the biggest gain comes from empirical tail calibration, not just from changing the variance recursion.**
 
-The package-based GARCHX(VIX) benchmark is conceptually worthwhile because implied volatility is economically meaningful and could plausibly improve tail forecasting. In the present saved outputs, however, it does not outperform the best return-based empirical-tail models. The evidence therefore supports treating it as a useful comparison rather than a preferred specification.
-
-The CAViaR-SAV result also warrants a balanced interpretation. The saved outputs do not support describing it as a failure of unconditional coverage. Rather, the model appears conservative in terms of hit frequency but weaker with respect to independence, and its current implementation remains limited by relatively light optimization and incomplete adequacy testing.
+A second useful lesson is that asymmetry still matters, just less than tail treatment. GJR-FHS beats GARCH-FHS narrowly but consistently, which suggests that asymmetry is worth incorporating once the tail is handled properly. That is exactly the kind of incremental modeling logic the report set out to show.
 
 # Limitations
 
-Several limitations should be acknowledged explicitly.
+Several limitations should be stated directly.
 
-1. **Split workflow.** The final comparison is assembled from multiple saved runners rather than a single unified estimation pipeline. The comparison remains meaningful because the out-of-sample horizon is aligned across models, but the workflow is less integrated than ideal.
+1. **The final comparison is integrated from multiple saved outputs.** The analysis is internally consistent because all included models share the same 848-day out-of-sample horizon, but the repository workflow is not a single unified runner.
 
-2. **GARCHX benchmark scope.** The package-based GARCHX benchmark is cleaner than the earlier custom implementation, but it still uses a Gaussian VaR overlay. It should therefore be interpreted as a comparison benchmark rather than as a final recommended model.
+2. **GARCHX is a benchmark, not a polished final candidate.** The package-based implementation is cleaner than the earlier custom version, but the final VaR mapping is still Gaussian, so it should not be overinterpreted.
 
-3. **CAViaR implementation scope.** Only the SAV specification is implemented, optimization is limited, and Dynamic Quantile-style adequacy testing is absent. The result is informative, but it is not a full replication of the original CAViaR framework.
+3. **The CAViaR implementation is simplified.** Only the SAV form is used, optimization is relatively light, and the Dynamic Quantile adequacy test from the original CAViaR framework is not included.
 
-4. **Bootstrap implementation detail.** The current bootstrap code resets the random seed within the forecast function. This improves reproducibility, but it makes the rolling bootstrap mechanically deterministic.
+4. **Bootstrap forecasts are mechanically deterministic in the saved implementation.** The code resets the random seed inside the forecast function, which improves reproducibility but makes the rolling bootstrap less genuinely stochastic than a fresh-resampling implementation would be.
 
-5. **Application scope.** The conclusions are specific to one asset, one forecast horizon, and one tail probability. The ranking could differ for other assets, multi-day VaR, or related risk measures such as Expected Shortfall.
+5. **The conclusions are application-specific.** The ranking is for QQQ, one-day horizon, and 1% VaR. Other assets, horizons, or tail levels could change the ordering.
 
 # Conclusion
 
-This report examined one-day-ahead 1% VaR forecasting for QQQ daily log returns using a rolling out-of-sample design with 848 forecast dates. The comparison across saved project outputs yields a consistent substantive conclusion.
+This report reorganized the VaR study as a stepwise model-selection story rather than a flat list of models. The starting baseline was a pair of Gaussian volatility-based VaR methods: **RiskMetrics** and **Gaussian GARCH(1,1)**. They were natural first choices because they are historically central, mathematically transparent, and closely aligned with standard lecture material. But the evidence showed that they were not enough. Both produced too many VaR breaches, which indicated that Gaussian left tails were too thin for QQQ one-day 1% risk forecasting.
 
-The backtest evidence supports the view that the most effective models are those that combine **dynamic volatility estimation with empirical tail calibration**. The strongest practical recommendation is **GJR-FHS**, with **GARCH-FHS** a close second. Historical Simulation remains a strong benchmark, and GARCH(1,1) remains a useful parametric baseline. By contrast, Gaussian-tail specifications such as GARCH-Gaussian and RiskMetrics tend to underestimate downside risk in this application.
+The next improvement was **Student-$t$ GARCH(1,1)**. This helped, confirming that heavier-tailed innovations matter, but it still did not fully solve the forecasting problem. After that, the report followed two directions. In the GARCH-family extension path, **GARCHX(VIX)** did not perform well enough to justify itself as the main direction, while **GJR-GARCH** suggested that asymmetry was somewhat useful. In the alternative-method path, **Historical Simulation** proved to be a strong benchmark, while the simplified **CAViaR-SAV** implementation was interesting but not convincing enough yet because of dependence issues and implementation limits.
 
-The package-based **GARCHX(VIX)** benchmark is worth including because it tests whether exogenous market volatility improves forecasting performance. In the saved outputs, however, it does not outperform the leading empirical-tail models. The exploratory **CAViaR-SAV** result is also worth reporting carefully: it is not primarily a coverage failure, but it remains limited by exception clustering and incomplete implementation.
+The final improvement came from the Lecture 18 empirical-tail path. Applying **FHS and related bootstrap ideas** to plain GARCH already improved performance strongly. Applying the same idea to **GJR-GARCH** improved further and produced the best overall final model. The final recommendation is therefore **GJR-FHS**, with **GARCH-FHS** a close second.
 
-The uncertainty analysis reinforces the same conclusion. Interval widths differ across model families and should not be treated as perfectly comparable, yet the most persuasive models are still those that combine reasonable uncertainty behavior with strong backtest calibration. On that criterion, **GJR-FHS** and **GARCH-FHS** remain the most convincing choices.
+The central methodological lesson is clear. For this application:
 
-A parsimonious interpretation of the full project is therefore the following: for one-day-ahead 1% VaR on QQQ, the most successful approach is not simply to forecast volatility, but to forecast volatility dynamically **and** allow the tail to be learned more flexibly from the data.
+- Gaussian volatility-only VaR is too weak,
+- Student-$t$ helps,
+- asymmetry helps somewhat,
+- GARCHX is not persuasive enough here,
+- Historical Simulation is a good benchmark,
+- the simplified CAViaR path is not yet convincing,
+- and the largest improvement comes from **empirical tail calibration**.
+
+That is why the report ends with **GJR-FHS** as the best final model for one-day-ahead 1% VaR forecasting on QQQ daily log returns.
 
 # References
 
-Barone-Adesi, G., Giannopoulos, K., & Vosper, L. (1999). *VaR without correlations for portfolios of derivative securities*. Journal of Futures Markets, 19(5), 583--602.
+Barone-Adesi, G., Giannopoulos, K., & Vosper, L. (1999). VaR without correlations for portfolios of derivative securities. *Journal of Futures Markets, 19*(5), 583--602.
 
 Bollerslev, T. (1986). Generalized autoregressive conditional heteroskedasticity. *Journal of Econometrics, 31*(3), 307--327.
 
@@ -541,7 +769,7 @@ Engle, R. F. (1982). Autoregressive conditional heteroscedasticity with estimate
 
 Engle, R. F., & Manganelli, S. (2004). CAViaR: Conditional autoregressive value at risk by regression quantiles. *Journal of Business & Economic Statistics, 22*(4), 367--381.
 
-J.P. Morgan/Reuters. (1996). *RiskMetrics technical document* (4th ed.). New York: J.P. Morgan.
+J.P. Morgan/Reuters. (1996). *RiskMetrics technical document* (4th ed.).
 
 Kupiec, P. H. (1995). Techniques for verifying the accuracy of risk measurement models. *Journal of Derivatives, 3*(2), 73--84.
 
