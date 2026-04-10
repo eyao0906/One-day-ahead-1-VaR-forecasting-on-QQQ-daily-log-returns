@@ -45,11 +45,11 @@ The model path is therefore:
 
 The research question is not volatility forecasting alone. For 1% left-tail risk, the key issue is tail calibration. A model can track conditional variance reasonably well and still underestimate downside risk if its lower tail is too thin. The evidence in this study shows exactly that pattern. Gaussian baselines are too shallow, Student-$t$ innovations help, asymmetric volatility helps somewhat, but the largest improvement comes from empirical-tail calibration through filtered historical simulation (FHS) and related bootstrap methods.
 
-Across the common out-of-sample period of 848 trading days, the main recommendation is GJR-FHS, with GARCH-FHS a close second. Historical Simulation remains a serious benchmark. GARCHX(VIX) is retained as a comparison benchmark only. The simplified CAViaR-SAV result is interesting, but not convincing enough to overturn the final recommendation.
+Over the common out-of-sample period of 848 trading days, GJR-GARCH with empirical tail calibration (implemented here through Filtered Historical Simulation) emerges as the preferred model, with GARCH-FHS a close second.Historical Simulation remains a credible benchmark, as its simplicity does not prevent it from delivering competitive results. GARCHX(VIX), however, is retained only as a comparison benchmark, because the inclusion of VIX as an exogenous regressor is not supported by the final performance evidence in this project. The simplified CAViaR-SAV specification is interesting from a methodological perspective, but its results are not strong enough to displace the final recommendation.
 
 # Historical Background
 
-VaR became especially prominent in the 1990s as institutions sought a compact summary of downside market risk. J.P. Morgan's *RiskMetrics* framework helped standardize daily variance-based VaR forecasting, which is why it remains a natural benchmark.
+VaR became especially prominent in the 1990s as institutions sought a compact summary of downside market risk. J.P. Morgan's RiskMetrics framework helped standardize daily variance-based VaR forecasting, which is why it remains a natural benchmark.
 
 The econometric basis of modern VaR forecasting comes from conditional heteroskedasticity models. Engle's ARCH model and Bollerslev's GARCH extension formalized volatility clustering and provided a natural route from conditional variance forecasts to conditional quantile forecasts. Once a model for time-varying volatility is available, one-step-ahead VaR can be constructed from a conditional mean, a conditional standard deviation, and an assumed or estimated lower-tail quantile.
 
@@ -207,11 +207,9 @@ $$
 | RiskMetrics | 18 | 2.12% | 0.0043 | 0.3925 | 0.0117 | 0.0004458 |
 | GARCH-Gaussian | 22 | 2.59% | 0.0001 | 0.5970 | 0.0005 | 0.0004363 |
 
-::: {layout-ncol=2}
 ![RiskMetrics ($\lambda$ = 0.94) backtest](../outputs/riskmetrics/plot_var_riskmetrics.png){width="100%"}
 
 ![Gaussian GARCH(1,1) backtest](../outputs/plots_ext/var_GARCH-Gaussian.png){width="100%"}
-:::
 
 Both benchmark models underestimate downside risk. RiskMetrics is smoother and more persistent, while GARCH-Gaussian reacts a bit faster and becomes more negative in stress, but neither model pushes the VaR line far enough into the left tail on a consistent basis. 
 
@@ -360,19 +358,15 @@ For one-step forecasting, bootstrap is essentially just a simulation-based way t
 | GARCH-Bootstrap | 5 | 0.59% | 0.1934 | 0.8075 | 0.4166 | 0.0004154 |
 | GARCH-$t$-Bootstrap | 6 | 0.71% | 0.3664 | 0.7698 | 0.6371 | 0.0004302 |
 
-::: {layout-ncol=2}
 ![GARCH-FHS backtest plot.](../outputs/plots_ext/var_GARCH-FHS.png){width="100%"}
 
 ![GARCH-$t$-FHS backtest plot.](../outputs/plots/var_GARCH-t-FHS.png){width="100%"}
-:::
 
 The paired FHS plots show the main visual effect of empirical-tail calibration: both models move further into the left tail during stress than the purely parametric versions. The gain is not only in depth but also in timing, since the VaR line adapts more convincingly when volatility rises sharply.
 
-::: {layout-ncol=2}
 ![GARCH-Bootstrap backtest plot.](../outputs/plots_ext/var_GARCH-Bootstrap.png){width="100%"}
 
 ![GARCH-$t$-Bootstrap backtest plot.](../outputs/plots/var_GARCH-t-Bootstrap.png){width="100%"}
-:::
 
 The paired bootstrap plots look very close to the FHS plots, which is exactly what one would expect in one-step forecasting when both methods rely on empirical standardized residual tails. The bootstrap versions are slightly more conservative, but it is still clear that empirical residual tails improve the forecast path materially relative to fixed parametric tails.
 
@@ -385,11 +379,9 @@ The same empirical-tail idea can then be combined with asymmetric volatility wit
 | GJR-Gaussian-FHS | 8 | 0.94% | 0.8672 | 0.6961 | 0.9137 | 0.0004012 |
 | GJR-$t$-FHS | 6 | 0.71% | 0.3664 | 0.7698 | 0.6371 | 0.0004171 |
 
-::: {layout-ncol=2}
 ![GJR-Gaussian-FHS backtest plot.](../outputs/plots_ext/var_GJR-FHS.png){width="100%"}
 
 ![GJR-$t$-FHS backtest plot.](../outputs/plots/var_GJR-t-FHS.png){width="100%"}
-:::
 
 The paired GJR empirical-tail plots complete the stepwise story. Both are visibly more responsive in the left tail than the earlier GJR-GARCH plot, but GJR-Gaussian-FHS gives the best overall balance between responsiveness and calibration. It deepens quickly in stress without drifting into excessive conservatism afterward. That visual balance is consistent with its strongest overall backtest performance.
 
@@ -482,7 +474,7 @@ Table 1 summarizes the full model comparison. Short labels are used only here to
 | GARCH-t | 13 | 1.53% | 0.1480 | 0.1890 | 0.1482 | 0.0004131 | Mid |
 | CAViaR-SAV | 6 | 0.71% | 0.3664 | 0.0297 | 0.0625 | 0.0004010 | Mixed |
 | GJR-GARCH | 15 | 1.77% | 0.0424 | 0.4621 | 0.0972 | 0.0004069 | Mixed |
-| GARCHX(VIX) | 15 | 1.77% | 0.0424 | 0.2621 | 0.0679 | 0.0004185 | Benchmark |
+| GARCHX(VIX) | 15 | 1.77% | 0.0424 | 0.2621 | 0.0679 | 0.0004185 | Weak |
 | RM(0.94) | 18 | 2.12% | 0.0043 | 0.3925 | 0.0117 | 0.0004458 | Weak |
 | GARCH-N | 22 | 2.59% | 0.0001 | 0.5970 | 0.0005 | 0.0004363 | Weak |
 
@@ -538,7 +530,7 @@ Pascual, L., Romo, J., & Ruiz, E. (2006). Bootstrap prediction for returns and v
 
 This appendix includes short method-relevant snippets only. For full code, see the project repository.
 
-*https://github.com/eyao0906/One-day-ahead-1-VaR-forecasting-on-QQQ-daily-log-returns*
+`https://github.com/eyao0906/One-day-ahead-1-VaR-forecasting-on-QQQ-daily-log-returns`
 
 ## RiskMetrics recursion and VaR mapping
 
